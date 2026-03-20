@@ -34,7 +34,7 @@ app.use(express.json());
 // Check if GitHub token is available
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const GITHUB_REPO_OWNER = process.env.GITHUB_REPO_OWNER || 'Walukapah';
-const GITHUB_REPO_NAME = process.env.GITHUB_REPO_NAME || 'SRI-DATABASE';
+const GITHUB_REPO_NAME = process.env.GITHUB_REPO_NAME || 'SRI-API-STORE';
 
 console.log('[GITHUB] Environment check:');
 console.log('[GITHUB] GITHUB_TOKEN exists:', !!GITHUB_TOKEN);
