@@ -34,25 +34,31 @@ app.use(express.json());
 // Check if GitHub token is available
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const GITHUB_REPO_OWNER = process.env.GITHUB_REPO_OWNER || 'Walukapah';
-const GITHUB_REPO_NAME = process.env.GITHUB_REPO_NAME || 'SRI-API-STORE';
+const GITHUB_REPO_NAME = process.env.GITHUB_REPO_NAME || 'SRI-DATABASE';
+
+console.log('[GITHUB] Environment check:');
+console.log('[GITHUB] GITHUB_TOKEN exists:', !!GITHUB_TOKEN);
+console.log('[GITHUB] GITHUB_TOKEN length:', GITHUB_TOKEN ? GITHUB_TOKEN.length : 0);
+console.log('[GITHUB] GITHUB_REPO_OWNER:', GITHUB_REPO_OWNER);
+console.log('[GITHUB] GITHUB_REPO_NAME:', GITHUB_REPO_NAME);
 
 let octokit = null;
 let githubEnabled = false;
 
-if (GITHUB_TOKEN && GITHUB_TOKEN.length > 0 && GITHUB_TOKEN !== 'your_github_token_here') {
+if (GITHUB_TOKEN && GITHUB_TOKEN.length > 10 && !GITHUB_TOKEN.includes('your')) {
     try {
         octokit = new Octokit({
             auth: GITHUB_TOKEN
         });
         githubEnabled = true;
-        console.log('[GITHUB] GitHub integration enabled');
+        console.log('[GITHUB] Octokit initialized successfully');
     } catch (error) {
         console.error('[GITHUB] Failed to initialize Octokit:', error.message);
         githubEnabled = false;
     }
 } else {
-    console.warn('[GITHUB] GITHUB_TOKEN not set or invalid. GitHub backup disabled. Using local file backup only.');
-    console.warn('[GITHUB] To enable GitHub backup, set GITHUB_TOKEN environment variable');
+    console.warn('[GITHUB] GITHUB_TOKEN not set, too short, or contains placeholder text');
+    console.warn('[GITHUB] Token value preview:', GITHUB_TOKEN ? GITHUB_TOKEN.substring(0, 10) + '...' : 'undefined');
 }
 
 const STATS_FILE = 'api_stats.json';
@@ -69,10 +75,56 @@ let stats = {
     lastUpdated: new Date().toISOString()
 };
 
+// Test GitHub connection
+async function testGitHubConnection() {
+    if (!octokit) {
+        console.log('[GITHUB] No octokit instance, skipping connection test');
+        return false;
+    }
+    
+    try {
+        console.log('[GITHUB] Testing connection to GitHub...');
+        const { data: user } = await octokit.users.getAuthenticated();
+        console.log(`[GITHUB] Authenticated as: ${user.login}`);
+        
+        // Test repo access
+        try {
+            const { data: repo } = await octokit.repos.get({
+                owner: GITHUB_REPO_OWNER,
+                repo: GITHUB_REPO_NAME
+            });
+            console.log(`[GITHUB] Repository access confirmed: ${repo.full_name}`);
+            return true;
+        } catch (repoError) {
+            console.error(`[GITHUB] Cannot access repository ${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}:`, repoError.message);
+            if (repoError.status === 404) {
+                console.error('[GITHUB] Repository not found. Please create it or check the name.');
+            } else if (repoError.status === 403) {
+                console.error('[GITHUB] No permission to access repository. Check token scopes.');
+            }
+            return false;
+        }
+    } catch (error) {
+        console.error('[GITHUB] Authentication test failed:', error.message);
+        if (error.status === 401) {
+            console.error('[GITHUB] Token is invalid or expired');
+        }
+        return false;
+    }
+}
+
 // Load stats from GitHub on startup
 async function loadStatsFromGitHub() {
     if (!githubEnabled || !octokit) {
         console.log('[STATS] GitHub not enabled, skipping GitHub load');
+        return false;
+    }
+
+    // First test connection
+    const connected = await testGitHubConnection();
+    if (!connected) {
+        console.log('[GITHUB] Connection test failed, disabling GitHub backup');
+        githubEnabled = false;
         return false;
     }
 
@@ -101,20 +153,17 @@ async function loadStatsFromGitHub() {
     } catch (error) {
         if (error.status === 404) {
             console.log('[STATS] No existing stats file on GitHub, will create new one');
-        } else if (error.status === 401) {
-            console.error('[STATS] GitHub authentication failed. Check your GITHUB_TOKEN.');
-            githubEnabled = false;
+            return true; // Return true so we know GitHub is working
         } else {
             console.error('[STATS] Failed to load from GitHub:', error.message);
+            return false;
         }
-        return false;
     }
 }
 
 // Save stats to GitHub
 async function saveStatsToGitHub() {
     if (!githubEnabled || !octokit) {
-        console.log('[STATS] GitHub not enabled, skipping GitHub save');
         return false;
     }
 
@@ -137,12 +186,7 @@ async function saveStatsToGitHub() {
             sha = data.sha;
         } catch (err) {
             if (err.status !== 404) {
-                if (err.status === 401) {
-                    console.error('[STATS] GitHub authentication failed during save');
-                    githubEnabled = false;
-                    return false;
-                }
-                throw err;
+                console.error('[STATS] Error getting file SHA:', err.message);
             }
         }
 
@@ -157,12 +201,17 @@ async function saveStatsToGitHub() {
             sha: sha || undefined,
         });
 
-        console.log(`[STATS] Saved to GitHub: ${stats.apiCalls} calls, ${stats.visitors.size} visitors`);
+        console.log(`[STATS] ✅ Saved to GitHub: ${stats.apiCalls} calls, ${stats.visitors.size} visitors`);
         return true;
     } catch (error) {
-        console.error('[STATS] Failed to save to GitHub:', error.message);
+        console.error('[STATS] ❌ Failed to save to GitHub:', error.message);
         if (error.status === 401) {
+            console.error('[STATS] Token became invalid, disabling GitHub backup');
             githubEnabled = false;
+        } else if (error.status === 403) {
+            console.error('[STATS] Rate limit or permission issue');
+        } else if (error.status === 404) {
+            console.error('[STATS] Repository not found');
         }
         return false;
     }
@@ -224,8 +273,8 @@ function startAutoSave() {
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: {
     status: false,
     message: "Too many requests from this IP, please try again later."
@@ -235,7 +284,7 @@ app.use('/download', limiter);
 app.use('/search', limiter);
 
 // ============================================
-// HEALTH CHECK ENDPOINT (Koyeb requirement)
+// HEALTH CHECK ENDPOINT
 // ============================================
 app.get('/health', (req, res) => {
   res.status(200).json({
@@ -252,7 +301,7 @@ app.get('/health', (req, res) => {
 });
 
 // ============================================
-// STATS ENDPOINTS (for documentation frontend)
+// STATS ENDPOINTS
 // ============================================
 
 // Get stats
@@ -302,81 +351,25 @@ app.post('/stats/increment', (req, res) => {
   }
 });
 
-// Manual backup trigger (for testing)
-app.post('/stats/backup', async (req, res) => {
-    const localResult = saveStatsToLocal();
-    let githubResult = false;
-    
-    if (githubEnabled) {
-        githubResult = await saveStatsToGitHub();
-    }
-    
-    res.json({
-        success: localResult || githubResult,
-        local: localResult,
-        github: githubResult,
-        githubEnabled: githubEnabled,
-        stats: {
-            apiCalls: stats.apiCalls,
-            visitors: stats.visitors.size
-        }
-    });
-});
-
 // ============================================
 // API ROUTES
 // ============================================
 
-// YouTube Download Endpoint
 app.get('/download/youtubedl', async (req, res) => {
   try {
     const url = req.query.url;
-    
     if (!url || (!url.includes('youtube.com') && !url.includes('youtu.be'))) {
       return res.status(400).json({ 
         status: false, 
         message: "Please provide a valid YouTube URL" 
       });
     }
-
     const youtubeData = await youtubedl(url);
-
     res.json({
       status: true,
       creator: "WALUKA🇱🇰",
       result: youtubeData
     });
-
-  } catch (error) {
-    console.error('API Error:', error);
-    res.status(500).json({ 
-      status: false, 
-      message: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
-  }
-});
-
-// YouTube Download V2 Endpoint
-app.get('/download/youtubedl2', async (req, res) => {
-  try {
-    const url = req.query.url;
-    
-    if (!url || !url.includes('youtu')) {
-      return res.status(400).json({ 
-        status: false, 
-        message: "Please provide a valid YouTube URL" 
-      });
-    }
-
-    const youtubeData = await youtubedl2(url);
-
-    res.json({
-      status: true,
-      creator: "WALUKA🇱🇰",
-      result: youtubeData
-    });
-
   } catch (error) {
     console.error('API Error:', error);
     res.status(500).json({ 
@@ -386,7 +379,30 @@ app.get('/download/youtubedl2', async (req, res) => {
   }
 });
 
-// TikTok Download Endpoint
+app.get('/download/youtubedl2', async (req, res) => {
+  try {
+    const url = req.query.url;
+    if (!url || !url.includes('youtu')) {
+      return res.status(400).json({ 
+        status: false, 
+        message: "Please provide a valid YouTube URL" 
+      });
+    }
+    const youtubeData = await youtubedl2(url);
+    res.json({
+      status: true,
+      creator: "WALUKA🇱🇰",
+      result: youtubeData
+    });
+  } catch (error) {
+    console.error('API Error:', error);
+    res.status(500).json({ 
+      status: false, 
+      message: error.message
+    });
+  }
+});
+
 app.get('/download/tiktokdl', async (req, res) => {
   try {
     if (!req.query.url) {
@@ -395,15 +411,12 @@ app.get('/download/tiktokdl', async (req, res) => {
         message: "Please provide a valid Tiktok URL"
       });
     }
-    
     const tiktokData = await tiktokdl(req.query.url);
-    
     res.json({
       status: true,
       creator: "WALUKA🇱🇰",
       result: tiktokData
     });
-    
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -412,7 +425,6 @@ app.get('/download/tiktokdl', async (req, res) => {
   }
 });
 
-// Instagram Download Endpoint
 app.get('/download/instagramdl', async (req, res) => {
   try {
     if (!req.query.url) {
@@ -422,13 +434,11 @@ app.get('/download/instagramdl', async (req, res) => {
       });
     }
     const instagramData = await instagramdl(req.query.url);
-
     res.json({
       status: true,
       creator: "WALUKA🇱🇰",
       result: instagramData
     });
-    
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -437,63 +447,51 @@ app.get('/download/instagramdl', async (req, res) => {
   }
 });
 
-// Free Fire Player Info Endpoint
 app.get('/search/freefire', async (req, res) => {
   try {
     const { region, uid } = req.query;
-    
     if (!region || !uid) {
       return res.status(400).json({ 
         status: false, 
         message: "Please provide both region and uid parameters" 
       });
     }
-
     const playerData = await freefireinfo(region, uid);
-
     res.json({
       status: true,
       creator: "WALUKA🇱🇰",
       result: playerData
     });
-
   } catch (error) {
     console.error('API Error:', error);
     res.status(500).json({ 
       status: false, 
-      message: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      message: error.message
     });
   }
 });
 
-// Text Photo Generation Endpoint
 app.get('/download/textphoto', async (req, res) => {
   try {
     const { url, text } = req.query;
-    
     if (!url) {
       return res.status(400).json({
         status: false,
         message: "Please provide a URL parameter"
       });
     }
-    
     if (!text) {
       return res.status(400).json({
         status: false,
         message: "Please provide a text parameter"
       });
     }
-
     const result = await maker(url, text);
-    
     res.json({
       status: true,
       creator: "WALUKA🇱🇰",
       result: result
     });
-    
   } catch (error) {
     res.status(500).json({
       status: false,
@@ -503,22 +501,19 @@ app.get('/download/textphoto', async (req, res) => {
 });
 
 // ============================================
-// STATIC FILES (Documentation from public folder)
+// STATIC FILES
 // ============================================
 
-// Serve index.html at root from public folder
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Serve static files from public folder
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ============================================
 // ERROR HANDLING
 // ============================================
 
-// 404 handler
 app.use((req, res) => {
   res.status(404).json({
     status: false,
@@ -534,7 +529,6 @@ app.use((req, res) => {
   });
 });
 
-// Global error handler
 app.use((err, req, res, next) => {
   console.error('Server Error:', err);
   res.status(500).json({
@@ -550,7 +544,6 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3000;
 
-// Initialize and start
 async function startServer() {
     console.log('[STARTUP] Starting SRI API V3.0...');
     
@@ -585,21 +578,8 @@ async function startServer() {
 ║                                          ║
 ║  Health: /health                         ║
 ║  Stats:   /stats                         ║
-║  Backup:  /stats/backup (POST)           ║
 ╚══════════════════════════════════════════╝
         `);
-        
-        if (!githubEnabled) {
-            console.log(`
-⚠️  GITHUB BACKUP DISABLED ⚠️
-To enable GitHub backup, set these environment variables:
-- GITHUB_TOKEN (your personal access token)
-- GITHUB_REPO_OWNER (default: Walukapah)
-- GITHUB_REPO_NAME (default: SRI-DATABASE)
-
-The token needs 'repo' scope permissions.
-            `);
-        }
     });
 }
 
