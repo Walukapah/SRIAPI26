@@ -482,7 +482,7 @@
         <div class="health-check-next" id="healthCheckNext">Next check: Today at 12:00 AM</div>
     </div>
 
-    <script>
+<script>
         // ============================================
         // CONFIGURATION - Backend URL
         // ============================================
@@ -512,47 +512,160 @@
         let currentCategory = null, currentEndpoint = null, currentResponse = null, currentTab = 'curl', sidebarSearchQuery = '', isShowingAllApis = false;
 
         // ============================================
-        // STATS SYSTEM - API Calls & Visitors
+        // STATS SYSTEM - IP Based Visitor Tracking (Daily Unique)
         // ============================================
         
         const STATS_CONFIG = {
             visitorDateKey: 'sri_api_visitor_date',
-            visitorIdKey: 'sri_api_visitor_id'
+            visitorIdKey: 'sri_api_visitor_id',
+            visitorIpKey: 'sri_api_visitor_ip',
+            lastIpFetch: 'sri_api_last_ip_fetch'
         };
 
+        // Get client IP address using ipify API
+        async function getClientIP() {
+            try {
+                // Check if we have cached IP from today
+                const lastFetch = localStorage.getItem(STATS_CONFIG.lastIpFetch);
+                const cachedIp = localStorage.getItem(STATS_CONFIG.visitorIpKey);
+                const today = new Date().toISOString().split('T')[0];
+                
+                // If we have cached IP from today, use it
+                if (lastFetch === today && cachedIp) {
+                    console.log('[STATS] Using cached IP from today:', cachedIp);
+                    return cachedIp;
+                }
+                
+                // Fetch new IP
+                console.log('[STATS] Fetching IP from ipify...');
+                const response = await fetch('https://api.ipify.org?format=json');
+                const data = await response.json();
+                
+                if (data && data.ip) {
+                    // Cache the IP for today
+                    localStorage.setItem(STATS_CONFIG.visitorIpKey, data.ip);
+                    localStorage.setItem(STATS_CONFIG.lastIpFetch, today);
+                    console.log('[STATS] Got IP from ipify:', data.ip);
+                    return data.ip;
+                }
+            } catch (e) {
+                console.log('[STATS] Failed to fetch IP from ipify:', e);
+                
+                // Fallback: Try ipinfo.io
+                try {
+                    const response = await fetch('https://ipinfo.io/json');
+                    const data = await response.json();
+                    if (data && data.ip) {
+                        const today = new Date().toISOString().split('T')[0];
+                        localStorage.setItem(STATS_CONFIG.visitorIpKey, data.ip);
+                        localStorage.setItem(STATS_CONFIG.lastIpFetch, today);
+                        console.log('[STATS] Got IP from ipinfo:', data.ip);
+                        return data.ip;
+                    }
+                } catch (e2) {
+                    console.log('[STATS] Failed to fetch IP from ipinfo:', e2);
+                }
+            }
+            
+            // Final fallback: Generate a unique fingerprint from browser data
+            const fallbackId = generateBrowserFingerprint();
+            console.log('[STATS] Using browser fingerprint:', fallbackId);
+            return fallbackId;
+        }
+        
+        // Generate a browser fingerprint as fallback
+        function generateBrowserFingerprint() {
+            const components = [
+                navigator.userAgent,
+                navigator.language,
+                screen.colorDepth,
+                screen.width + 'x' + screen.height,
+                new Date().getTimezoneOffset(),
+                !!window.sessionStorage,
+                !!window.localStorage,
+                navigator.hardwareConcurrency || 'unknown',
+                navigator.deviceMemory || 'unknown'
+            ];
+            
+            const fingerprint = components.join('|||');
+            // Simple hash
+            let hash = 0;
+            for (let i = 0; i < fingerprint.length; i++) {
+                const char = fingerprint.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash;
+            }
+            return 'fp_' + Math.abs(hash).toString(16);
+        }
+
         async function initStats() {
-            // Track visitor (daily unique)
-            await trackDailyUniqueVisitor();
+            // Get client IP first
+            const clientIP = await getClientIP();
+            
+            // Track visitor (daily unique based on IP)
+            await trackDailyUniqueVisitor(clientIP);
+            
             // Load and display stats from backend
             await updateStatsDisplay();
         }
 
-        async function trackDailyUniqueVisitor() {
+        async function trackDailyUniqueVisitor(ip) {
             const today = new Date().toISOString().split('T')[0];
             const lastVisitDate = localStorage.getItem(STATS_CONFIG.visitorDateKey);
+            const storedIp = localStorage.getItem(STATS_CONFIG.visitorIdKey);
             
-            if (lastVisitDate !== today) {
-                // New visitor - send to backend
+            // Check if this is a new day or different IP
+            const isNewDay = lastVisitDate !== today;
+            const isDifferentIP = storedIp !== ip;
+            
+            console.log('[STATS] Visitor check:', { 
+                today, 
+                lastVisitDate, 
+                isNewDay, 
+                isDifferentIP,
+                ip: ip.substring(0, 10) + '...'
+            });
+            
+            // Only send to backend if new day OR different IP
+            if (isNewDay || isDifferentIP) {
                 try {
-                    await fetch(`${BACKEND_URL}/stats/increment`, {
+                    const response = await fetch(`${BACKEND_URL}/stats/increment`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ type: 'visitor' })
+                        body: JSON.stringify({ 
+                            type: 'visitor',
+                            visitorId: ip  // Send IP to backend
+                        })
                     });
-                    localStorage.setItem(STATS_CONFIG.visitorDateKey, today);
-                    console.log('[STATS] New visitor tracked');
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        localStorage.setItem(STATS_CONFIG.visitorDateKey, today);
+                        localStorage.setItem(STATS_CONFIG.visitorIdKey, ip);
+                        console.log('[STATS] New visitor tracked:', result.isNewVisitor ? 'YES' : 'ALREADY COUNTED');
+                    }
                 } catch (e) {
                     console.log('[STATS] Failed to track visitor:', e);
                 }
+            } else {
+                console.log('[STATS] Same IP, same day - not counting again');
             }
         }
 
         async function incrementApiCall(endpoint = null) {
+            // Get current IP to include in request
+            const clientIP = await getClientIP();
+            
             try {
                 await fetch(`${BACKEND_URL}/stats/increment`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type: 'apiCall', endpoint: endpoint })
+                    body: JSON.stringify({ 
+                        type: 'apiCall', 
+                        endpoint: endpoint,
+                        visitorId: clientIP  // Include IP for consistency
+                    })
                 });
                 await updateStatsDisplay();
                 console.log('[STATS] API call incremented', endpoint ? `for ${endpoint}` : '');
@@ -1359,7 +1472,6 @@
             initStats(); // Initialize stats tracking
             trackDirectApiCall(); // Check if this is a direct API call
         });
-    </script>
+</script>
 </body>
 </html>
-
