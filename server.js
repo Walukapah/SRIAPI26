@@ -30,18 +30,38 @@ app.use(express.json());
 // ============================================
 // GITHUB CONFIGURATION
 // ============================================
-const octokit = new Octokit({
-    auth: process.env.GITHUB_TOKEN
-});
-const owner = process.env.GITHUB_REPO_OWNER || 'Walukapah';
-const repo = process.env.GITHUB_REPO_NAME || 'SRI-API-STORE';
+
+// Check if GitHub token is available
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const GITHUB_REPO_OWNER = process.env.GITHUB_REPO_OWNER || 'Walukapah';
+const GITHUB_REPO_NAME = process.env.GITHUB_REPO_NAME || 'SRI-API-STORE';
+
+let octokit = null;
+let githubEnabled = false;
+
+if (GITHUB_TOKEN && GITHUB_TOKEN.length > 0 && GITHUB_TOKEN !== 'your_github_token_here') {
+    try {
+        octokit = new Octokit({
+            auth: GITHUB_TOKEN
+        });
+        githubEnabled = true;
+        console.log('[GITHUB] GitHub integration enabled');
+    } catch (error) {
+        console.error('[GITHUB] Failed to initialize Octokit:', error.message);
+        githubEnabled = false;
+    }
+} else {
+    console.warn('[GITHUB] GITHUB_TOKEN not set or invalid. GitHub backup disabled. Using local file backup only.');
+    console.warn('[GITHUB] To enable GitHub backup, set GITHUB_TOKEN environment variable');
+}
+
 const STATS_FILE = 'api_stats.json';
 
 // ============================================
-// STATS SYSTEM - GitHub Persistent Storage
+// STATS SYSTEM - GitHub + Local Persistent Storage
 // ============================================
 
-// In-memory stats (will be synced with GitHub)
+// In-memory stats (will be synced with GitHub and local file)
 let stats = {
     apiCalls: 0,
     visitors: new Set(),
@@ -51,10 +71,16 @@ let stats = {
 
 // Load stats from GitHub on startup
 async function loadStatsFromGitHub() {
+    if (!githubEnabled || !octokit) {
+        console.log('[STATS] GitHub not enabled, skipping GitHub load');
+        return false;
+    }
+
     try {
+        console.log('[STATS] Loading stats from GitHub...');
         const { data } = await octokit.repos.getContent({
-            owner,
-            repo,
+            owner: GITHUB_REPO_OWNER,
+            repo: GITHUB_REPO_NAME,
             path: STATS_FILE
         });
 
@@ -68,41 +94,30 @@ async function loadStatsFromGitHub() {
         stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
         
         // Also save locally as backup
-        fs.writeFileSync(`./${STATS_FILE}`, JSON.stringify({
-            apiCalls: stats.apiCalls,
-            visitors: Array.from(stats.visitors),
-            endpointCalls: stats.endpointCalls,
-            lastUpdated: stats.lastUpdated
-        }, null, 2));
+        saveStatsToLocal();
         
         console.log(`[STATS] Loaded from GitHub: ${stats.apiCalls} calls, ${stats.visitors.size} visitors`);
         return true;
     } catch (error) {
         if (error.status === 404) {
-            console.log('[STATS] No existing stats file on GitHub, starting fresh');
+            console.log('[STATS] No existing stats file on GitHub, will create new one');
+        } else if (error.status === 401) {
+            console.error('[STATS] GitHub authentication failed. Check your GITHUB_TOKEN.');
+            githubEnabled = false;
         } else {
             console.error('[STATS] Failed to load from GitHub:', error.message);
         }
-        
-        // Try to load from local backup
-        try {
-            if (fs.existsSync(`./${STATS_FILE}`)) {
-                const localData = JSON.parse(fs.readFileSync(`./${STATS_FILE}`, 'utf8'));
-                stats.apiCalls = localData.apiCalls || 0;
-                stats.visitors = new Set(localData.visitors || []);
-                stats.endpointCalls = localData.endpointCalls || {};
-                console.log(`[STATS] Loaded from local backup: ${stats.apiCalls} calls, ${stats.visitors.size} visitors`);
-            }
-        } catch (localError) {
-            console.error('[STATS] Failed to load local backup:', localError);
-        }
-        
         return false;
     }
 }
 
 // Save stats to GitHub
 async function saveStatsToGitHub() {
+    if (!githubEnabled || !octokit) {
+        console.log('[STATS] GitHub not enabled, skipping GitHub save');
+        return false;
+    }
+
     try {
         const statsData = {
             apiCalls: stats.apiCalls,
@@ -115,55 +130,93 @@ async function saveStatsToGitHub() {
         let sha = null;
         try {
             const { data } = await octokit.repos.getContent({
-                owner,
-                repo,
+                owner: GITHUB_REPO_OWNER,
+                repo: GITHUB_REPO_NAME,
                 path: STATS_FILE
             });
             sha = data.sha;
         } catch (err) {
-            if (err.status !== 404) throw err;
+            if (err.status !== 404) {
+                if (err.status === 401) {
+                    console.error('[STATS] GitHub authentication failed during save');
+                    githubEnabled = false;
+                    return false;
+                }
+                throw err;
+            }
         }
 
         const contentEncoded = Buffer.from(JSON.stringify(statsData, null, 2)).toString('base64');
 
         await octokit.repos.createOrUpdateFileContents({
-            owner,
-            repo,
+            owner: GITHUB_REPO_OWNER,
+            repo: GITHUB_REPO_NAME,
             path: STATS_FILE,
             message: `Update API stats - ${stats.apiCalls} calls, ${stats.visitors.size} visitors`,
             content: contentEncoded,
             sha: sha || undefined,
         });
 
-        // Also update local backup
-        fs.writeFileSync(`./${STATS_FILE}`, JSON.stringify(statsData, null, 2));
-        
         console.log(`[STATS] Saved to GitHub: ${stats.apiCalls} calls, ${stats.visitors.size} visitors`);
         return true;
     } catch (error) {
         console.error('[STATS] Failed to save to GitHub:', error.message);
-        
-        // Save locally as fallback
-        try {
-            const statsData = {
-                apiCalls: stats.apiCalls,
-                visitors: Array.from(stats.visitors),
-                endpointCalls: stats.endpointCalls,
-                lastUpdated: new Date().toISOString()
-            };
-            fs.writeFileSync(`./${STATS_FILE}`, JSON.stringify(statsData, null, 2));
-        } catch (localError) {
-            console.error('[STATS] Failed to save locally:', localError);
+        if (error.status === 401) {
+            githubEnabled = false;
         }
-        
         return false;
     }
 }
 
-// Auto-save every minute
+// Save stats to local file
+function saveStatsToLocal() {
+    try {
+        const statsData = {
+            apiCalls: stats.apiCalls,
+            visitors: Array.from(stats.visitors),
+            endpointCalls: stats.endpointCalls,
+            lastUpdated: new Date().toISOString()
+        };
+        fs.writeFileSync(`./${STATS_FILE}`, JSON.stringify(statsData, null, 2));
+        console.log(`[STATS] Saved locally: ${stats.apiCalls} calls, ${stats.visitors.size} visitors`);
+        return true;
+    } catch (error) {
+        console.error('[STATS] Failed to save locally:', error.message);
+        return false;
+    }
+}
+
+// Load stats from local file
+function loadStatsFromLocal() {
+    try {
+        if (fs.existsSync(`./${STATS_FILE}`)) {
+            const content = fs.readFileSync(`./${STATS_FILE}`, 'utf8');
+            const parsedStats = JSON.parse(content);
+            
+            stats.apiCalls = parsedStats.apiCalls || 0;
+            stats.visitors = new Set(parsedStats.visitors || []);
+            stats.endpointCalls = parsedStats.endpointCalls || {};
+            stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
+            
+            console.log(`[STATS] Loaded from local: ${stats.apiCalls} calls, ${stats.visitors.size} visitors`);
+            return true;
+        }
+    } catch (error) {
+        console.error('[STATS] Failed to load from local:', error.message);
+    }
+    return false;
+}
+
+// Auto-save every minute (GitHub + Local)
 function startAutoSave() {
     setInterval(async () => {
-        await saveStatsToGitHub();
+        // Always save locally
+        saveStatsToLocal();
+        
+        // Try to save to GitHub if enabled
+        if (githubEnabled) {
+            await saveStatsToGitHub();
+        }
     }, 60000); // Every 1 minute
     
     console.log('[STATS] Auto-save started (every 1 minute)');
@@ -190,6 +243,7 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     version: '3.0.0',
+    githubBackup: githubEnabled,
     stats: {
         apiCalls: stats.apiCalls,
         visitors: stats.visitors.size
@@ -208,6 +262,7 @@ app.get('/stats', (req, res) => {
     visitors: stats.visitors.size,
     endpointCalls: stats.endpointCalls,
     lastUpdated: stats.lastUpdated,
+    githubBackup: githubEnabled,
     timestamp: new Date().toISOString()
   });
 });
@@ -245,6 +300,27 @@ app.post('/stats/increment', (req, res) => {
   } else {
     res.status(400).json({ success: false, message: 'Invalid type' });
   }
+});
+
+// Manual backup trigger (for testing)
+app.post('/stats/backup', async (req, res) => {
+    const localResult = saveStatsToLocal();
+    let githubResult = false;
+    
+    if (githubEnabled) {
+        githubResult = await saveStatsToGitHub();
+    }
+    
+    res.json({
+        success: localResult || githubResult,
+        local: localResult,
+        github: githubResult,
+        githubEnabled: githubEnabled,
+        stats: {
+            apiCalls: stats.apiCalls,
+            visitors: stats.visitors.size
+        }
+    });
 });
 
 // ============================================
@@ -476,8 +552,15 @@ const PORT = process.env.PORT || 3000;
 
 // Initialize and start
 async function startServer() {
-    // Load stats from GitHub first
-    await loadStatsFromGitHub();
+    console.log('[STARTUP] Starting SRI API V3.0...');
+    
+    // First try to load from GitHub
+    const githubLoaded = await loadStatsFromGitHub();
+    
+    // If GitHub failed, try local
+    if (!githubLoaded) {
+        loadStatsFromLocal();
+    }
     
     // Start auto-save
     startAutoSave();
@@ -489,7 +572,8 @@ async function startServer() {
 ║       Server running on port ${PORT}        ║
 ║                                          ║
 ║  Stats: ${stats.apiCalls} calls, ${stats.visitors.size} visitors    ║
-║  GitHub: Auto-save every 1 minute        ║
+║  GitHub Backup: ${githubEnabled ? 'ENABLED ✅' : 'DISABLED ❌'}      ║
+║  Local Backup: ENABLED ✅                ║
 ║                                          ║
 ║  Endpoints:                              ║
 ║  • /download/youtubedl                   ║
@@ -501,8 +585,21 @@ async function startServer() {
 ║                                          ║
 ║  Health: /health                         ║
 ║  Stats:   /stats                         ║
+║  Backup:  /stats/backup (POST)           ║
 ╚══════════════════════════════════════════╝
         `);
+        
+        if (!githubEnabled) {
+            console.log(`
+⚠️  GITHUB BACKUP DISABLED ⚠️
+To enable GitHub backup, set these environment variables:
+- GITHUB_TOKEN (your personal access token)
+- GITHUB_REPO_OWNER (default: Walukapah)
+- GITHUB_REPO_NAME (default: SRI-DATABASE)
+
+The token needs 'repo' scope permissions.
+            `);
+        }
     });
 }
 
