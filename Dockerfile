@@ -1,12 +1,12 @@
-# Dockerfile - Fixed for Koyeb
-FROM node:18-alpine
+# Dockerfile - Use Node.js 20
+FROM node:20-alpine
 
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies (npm install instead of npm ci)
+# Install dependencies
 RUN npm install --omit=dev
 
 # Copy app files (includes api/ and public/ folders)
