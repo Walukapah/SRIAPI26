@@ -34,7 +34,7 @@ const octokit = new Octokit({
     auth: process.env.GITHUB_TOKEN
 });
 const owner = process.env.GITHUB_REPO_OWNER || 'Walukapah';
-const repo = process.env.GITHUB_REPO_NAME || 'SRI-DATABASE';
+const repo = process.env.GITHUB_REPO_NAME || 'SRI-API-STORE';
 const STATS_FILE = 'api_stats.json';
 
 // ============================================
