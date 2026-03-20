@@ -1,4 +1,4 @@
-# Dockerfile - Updated for folder structure
+# Dockerfile - Fixed for Koyeb
 FROM node:18-alpine
 
 WORKDIR /app
@@ -6,14 +6,17 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install dependencies (npm install instead of npm ci)
+RUN npm install --omit=dev
 
 # Copy app files (includes api/ and public/ folders)
 COPY . .
 
 # Expose port
 EXPOSE 3000
+
+# Install curl for healthcheck
+RUN apk add --no-cache curl
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
