@@ -64,16 +64,21 @@ if (GITHUB_TOKEN && GITHUB_TOKEN.length > 10 && !GITHUB_TOKEN.includes('your')) 
 const STATS_FILE = 'api_stats.json';
 
 // ============================================
-// STATS SYSTEM - GitHub + Local Persistent Storage
+// STATS SYSTEM - IP Based Daily Unique Visitors
 // ============================================
 
 // In-memory stats (will be synced with GitHub and local file)
 let stats = {
     apiCalls: 0,
-    visitors: new Set(),
+    visitors: {},  // Format: { "2024-03-20": { "hashed_ip_1": timestamp, "hashed_ip_2": timestamp } }
     endpointCalls: {},
     lastUpdated: new Date().toISOString()
 };
+
+// Helper function to get today's date string (YYYY-MM-DD)
+function getTodayString() {
+    return new Date().toISOString().split('T')[0];
+}
 
 // Test GitHub connection
 async function testGitHubConnection() {
@@ -139,16 +144,18 @@ async function loadStatsFromGitHub() {
         const content = Buffer.from(data.content, 'base64').toString('utf8');
         const parsedStats = JSON.parse(content);
         
-        // Convert visitors array back to Set
+        // Convert visitors object back from saved format
         stats.apiCalls = parsedStats.apiCalls || 0;
-        stats.visitors = new Set(parsedStats.visitors || []);
+        stats.visitors = parsedStats.visitors || {};  // Now it's an object with date keys
         stats.endpointCalls = parsedStats.endpointCalls || {};
         stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
         
         // Also save locally as backup
         saveStatsToLocal();
         
-        console.log(`[STATS] Loaded from GitHub: ${stats.apiCalls} calls, ${stats.visitors.size} visitors`);
+        const today = getTodayString();
+        const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
+        console.log(`[STATS] Loaded from GitHub: ${stats.apiCalls} calls, ${todayVisitors} visitors today`);
         return true;
     } catch (error) {
         if (error.status === 404) {
@@ -170,7 +177,7 @@ async function saveStatsToGitHub() {
     try {
         const statsData = {
             apiCalls: stats.apiCalls,
-            visitors: Array.from(stats.visitors),
+            visitors: stats.visitors,  // Now saving as object
             endpointCalls: stats.endpointCalls,
             lastUpdated: new Date().toISOString()
         };
@@ -196,12 +203,14 @@ async function saveStatsToGitHub() {
             owner: GITHUB_REPO_OWNER,
             repo: GITHUB_REPO_NAME,
             path: STATS_FILE,
-            message: `Update API stats - ${stats.apiCalls} calls, ${stats.visitors.size} visitors`,
+            message: `Update API stats - ${stats.apiCalls} calls`,
             content: contentEncoded,
             sha: sha || undefined,
         });
 
-        console.log(`[STATS] ✅ Saved to GitHub: ${stats.apiCalls} calls, ${stats.visitors.size} visitors`);
+        const today = getTodayString();
+        const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
+        console.log(`[STATS] ✅ Saved to GitHub: ${stats.apiCalls} calls, ${todayVisitors} visitors today`);
         return true;
     } catch (error) {
         console.error('[STATS] ❌ Failed to save to GitHub:', error.message);
@@ -222,12 +231,14 @@ function saveStatsToLocal() {
     try {
         const statsData = {
             apiCalls: stats.apiCalls,
-            visitors: Array.from(stats.visitors),
+            visitors: stats.visitors,  // Now saving as object
             endpointCalls: stats.endpointCalls,
             lastUpdated: new Date().toISOString()
         };
         fs.writeFileSync(`./${STATS_FILE}`, JSON.stringify(statsData, null, 2));
-        console.log(`[STATS] Saved locally: ${stats.apiCalls} calls, ${stats.visitors.size} visitors`);
+        const today = getTodayString();
+        const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
+        console.log(`[STATS] Saved locally: ${stats.apiCalls} calls, ${todayVisitors} visitors today`);
         return true;
     } catch (error) {
         console.error('[STATS] Failed to save locally:', error.message);
@@ -243,11 +254,13 @@ function loadStatsFromLocal() {
             const parsedStats = JSON.parse(content);
             
             stats.apiCalls = parsedStats.apiCalls || 0;
-            stats.visitors = new Set(parsedStats.visitors || []);
+            stats.visitors = parsedStats.visitors || {};  // Now it's an object
             stats.endpointCalls = parsedStats.endpointCalls || {};
             stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
             
-            console.log(`[STATS] Loaded from local: ${stats.apiCalls} calls, ${stats.visitors.size} visitors`);
+            const today = getTodayString();
+            const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
+            console.log(`[STATS] Loaded from local: ${stats.apiCalls} calls, ${todayVisitors} visitors today`);
             return true;
         }
     } catch (error) {
@@ -287,6 +300,9 @@ app.use('/search', limiter);
 // HEALTH CHECK ENDPOINT
 // ============================================
 app.get('/health', (req, res) => {
+  const today = getTodayString();
+  const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
+  
   res.status(200).json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -295,7 +311,7 @@ app.get('/health', (req, res) => {
     githubBackup: githubEnabled,
     stats: {
         apiCalls: stats.apiCalls,
-        visitors: stats.visitors.size
+        visitors: todayVisitors
     }
   });
 });
@@ -306,9 +322,19 @@ app.get('/health', (req, res) => {
 
 // Get stats
 app.get('/stats', (req, res) => {
+  const today = getTodayString();
+  const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
+  
+  // Calculate total unique visitors across all days
+  let totalUniqueVisitors = 0;
+  Object.values(stats.visitors).forEach(dayVisitors => {
+    totalUniqueVisitors += Object.keys(dayVisitors).length;
+  });
+  
   res.json({
     apiCalls: stats.apiCalls,
-    visitors: stats.visitors.size,
+    visitors: todayVisitors,  // Today's unique visitors
+    totalVisitors: totalUniqueVisitors,  // All-time unique visitors
     endpointCalls: stats.endpointCalls,
     lastUpdated: stats.lastUpdated,
     githubBackup: githubEnabled,
@@ -318,19 +344,46 @@ app.get('/stats', (req, res) => {
 
 // Increment stats
 app.post('/stats/increment', (req, res) => {
-  const { type, endpoint } = req.body;
+  const { type, endpoint, visitorId } = req.body;
+  const today = getTodayString();
   
   if (type === 'visitor') {
-    const visitorId = req.headers['x-forwarded-for'] || req.ip || crypto.randomUUID();
-    const isNewVisitor = !stats.visitors.has(visitorId);
-    stats.visitors.add(visitorId);
+    // Get visitor identifier (IP or provided visitorId from frontend)
+    const clientIp = req.headers['x-forwarded-for'] || req.ip || 'unknown';
+    // Use provided visitorId (IP from frontend) if available, otherwise use server-detected IP
+    const vid = visitorId || clientIp;
+    
+    // Create hash of visitor ID for privacy
+    const visitorHash = crypto.createHash('sha256').update(vid).digest('hex').substring(0, 16);
+    
+    // Initialize today's visitors if not exists
+    if (!stats.visitors[today]) {
+        stats.visitors[today] = {};
+    }
+    
+    // Check if this visitor already visited today
+    const isNewVisitor = !stats.visitors[today][visitorHash];
+    
+    // Mark visitor as visited today (store timestamp)
+    stats.visitors[today][visitorHash] = new Date().toISOString();
+    
+    // Clean up old visitor data (keep only last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    Object.keys(stats.visitors).forEach(date => {
+        if (new Date(date) < thirtyDaysAgo) {
+            delete stats.visitors[date];
+        }
+    });
+    
+    const todayCount = Object.keys(stats.visitors[today]).length;
     
     res.json({ 
         success: true, 
         isNewVisitor,
         stats: {
             apiCalls: stats.apiCalls,
-            visitors: stats.visitors.size
+            visitors: todayCount
         }
     });
   } else if (type === 'apiCall') {
@@ -339,11 +392,13 @@ app.post('/stats/increment', (req, res) => {
       stats.endpointCalls[endpoint] = (stats.endpointCalls[endpoint] || 0) + 1;
     }
     
+    const todayCount = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
+    
     res.json({ 
         success: true, 
         stats: {
             apiCalls: stats.apiCalls,
-            visitors: stats.visitors.size
+            visitors: todayCount
         }
     });
   } else {
@@ -559,12 +614,15 @@ async function startServer() {
     startAutoSave();
     
     app.listen(PORT, '0.0.0.0', () => {
+        const today = getTodayString();
+        const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
+        
         console.log(`
 ╔══════════════════════════════════════════╗
 ║           SRI API V3.0                   ║
 ║       Server running on port ${PORT}        ║
 ║                                          ║
-║  Stats: ${stats.apiCalls} calls, ${stats.visitors.size} visitors    ║
+║  Stats: ${stats.apiCalls} calls, ${todayVisitors} visitors today    ║
 ║  GitHub Backup: ${githubEnabled ? 'ENABLED ✅' : 'DISABLED ❌'}      ║
 ║  Local Backup: ENABLED ✅                ║
 ║                                          ║
