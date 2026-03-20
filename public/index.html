@@ -484,15 +484,9 @@
 
     <script>
         // ============================================
-        // CONFIGURATION - Hugging Face Backend URL
+        // CONFIGURATION - Backend URL
         // ============================================
-        // CHANGE THIS TO YOUR HUGGING FACE SPACE URL
-        const HF_BACKEND_URL = "https://srinetwork-api.hf.space"; 
-        
-        // For local testing, you can use: http://localhost:7860
-        // For production, use your Hugging Face Space URL
-
-        const getBaseUrl = () => window.location.origin;
+        const BACKEND_URL = window.location.origin;
 
         const apiData = {
             download: {
@@ -518,7 +512,7 @@
         let currentCategory = null, currentEndpoint = null, currentResponse = null, currentTab = 'curl', sidebarSearchQuery = '', isShowingAllApis = false;
 
         // ============================================
-        // STATS SYSTEM - API Calls & Visitors (HF Backend)
+        // STATS SYSTEM - API Calls & Visitors
         // ============================================
         
         const STATS_CONFIG = {
@@ -529,7 +523,7 @@
         async function initStats() {
             // Track visitor (daily unique)
             await trackDailyUniqueVisitor();
-            // Load and display stats from HF backend
+            // Load and display stats from backend
             await updateStatsDisplay();
         }
 
@@ -540,7 +534,7 @@
             if (lastVisitDate !== today) {
                 // New visitor - send to backend
                 try {
-                    await fetch(`${HF_BACKEND_URL}/stats/increment`, {
+                    await fetch(`${BACKEND_URL}/stats/increment`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ type: 'visitor' })
@@ -555,7 +549,7 @@
 
         async function incrementApiCall(endpoint = null) {
             try {
-                await fetch(`${HF_BACKEND_URL}/stats/increment`, {
+                await fetch(`${BACKEND_URL}/stats/increment`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ type: 'apiCall', endpoint: endpoint })
@@ -569,7 +563,7 @@
 
         async function getStats() {
             try {
-                const response = await fetch(`${HF_BACKEND_URL}/stats`);
+                const response = await fetch(`${BACKEND_URL}/stats`);
                 if (response.ok) {
                     return await response.json();
                 }
@@ -789,7 +783,7 @@
                 }
             }
             
-                        const summary = { online: onlineCount, offline: totalCount - onlineCount, total: totalCount };
+            const summary = { online: onlineCount, offline: totalCount - onlineCount, total: totalCount };
             const timeString = formatSriLankanTime(getSriLankanTime());
             
             // Save to localStorage
@@ -810,7 +804,7 @@
 
         async function checkSingleEndpoint(categoryKey, endpointIndex) {
             const endpoint = apiData[categoryKey].endpoints[endpointIndex];
-            const baseUrl = getBaseUrl();
+            const baseUrl = BACKEND_URL;
             
             // Set to checking while testing
             endpoint.status = 'checking';
@@ -1192,13 +1186,11 @@
         }
 
         function updateEndpointUrl() {
-            const baseUrl = getBaseUrl();
-            document.getElementById('endpointUrl').textContent = `${baseUrl}${currentEndpoint.path}`;
+            document.getElementById('endpointUrl').textContent = `${BACKEND_URL}${currentEndpoint.path}`;
         }
 
         function buildRequestUrl() {
-            const baseUrl = getBaseUrl();
-            let url = `${baseUrl}${currentEndpoint.path}`;
+            let url = `${BACKEND_URL}${currentEndpoint.path}`;
             const params = currentEndpoint.params || [];
             if (params.length > 0) {
                 const queryParams = [];
