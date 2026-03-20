@@ -1,9 +1,13 @@
-// server.js - Updated with GitHub storage for stats
+// server.js - Updated with GitHub Integration for Stats Persistence
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const fs = require('fs');
+
+// GitHub integration
 const { Octokit } = require('@octokit/rest');
+const crypto = require('crypto');
 
 // Import API modules from api/ folder
 const youtubedl = require('./api/youtubedl');
@@ -26,135 +30,149 @@ app.use(express.json());
 // ============================================
 // GITHUB CONFIGURATION
 // ============================================
-const GITHUB_CONFIG = {
-  owner: 'Walukapaha',
-  repo: 'SRI-API-STORE',
-  path: 'stats.json',
-  branch: 'main'
-};
-
-// Initialize Octokit with GitHub token from environment
 const octokit = new Octokit({
-  auth: process.env.GITHUB_TOKEN
+    auth: process.env.GITHUB_TOKEN
 });
+const owner = process.env.GITHUB_REPO_OWNER || 'Walukapah';
+const repo = process.env.GITHUB_REPO_NAME || 'SRI-DATABASE';
+const STATS_FILE = 'api_stats.json';
 
-// In-memory stats cache
-let statsCache = {
-  apiCalls: 0,
-  visitors: new Set(),
-  endpointCalls: {},
-  lastSync: null
+// ============================================
+// STATS SYSTEM - GitHub Persistent Storage
+// ============================================
+
+// In-memory stats (will be synced with GitHub)
+let stats = {
+    apiCalls: 0,
+    visitors: new Set(),
+    endpointCalls: {},
+    lastUpdated: new Date().toISOString()
 };
 
-// ============================================
-// GITHUB STATS MANAGEMENT
-// ============================================
-
-// Load stats from GitHub
+// Load stats from GitHub on startup
 async function loadStatsFromGitHub() {
-  try {
-    console.log('[GITHUB] Loading stats from GitHub...');
-    
-    const { data } = await octokit.repos.getContent({
-      owner: GITHUB_CONFIG.owner,
-      repo: GITHUB_CONFIG.repo,
-      path: GITHUB_CONFIG.path,
-      ref: GITHUB_CONFIG.branch
-    });
+    try {
+        const { data } = await octokit.repos.getContent({
+            owner,
+            repo,
+            path: STATS_FILE
+        });
 
-    const content = Buffer.from(data.content, 'base64').toString('utf8');
-    const savedStats = JSON.parse(content);
-    
-    // Restore stats
-    statsCache.apiCalls = savedStats.apiCalls || 0;
-    statsCache.endpointCalls = savedStats.endpointCalls || {};
-    
-    // Restore visitors (convert array back to Set)
-    if (savedStats.visitors && Array.isArray(savedStats.visitors)) {
-      statsCache.visitors = new Set(savedStats.visitors);
+        const content = Buffer.from(data.content, 'base64').toString('utf8');
+        const parsedStats = JSON.parse(content);
+        
+        // Convert visitors array back to Set
+        stats.apiCalls = parsedStats.apiCalls || 0;
+        stats.visitors = new Set(parsedStats.visitors || []);
+        stats.endpointCalls = parsedStats.endpointCalls || {};
+        stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
+        
+        // Also save locally as backup
+        fs.writeFileSync(`./${STATS_FILE}`, JSON.stringify({
+            apiCalls: stats.apiCalls,
+            visitors: Array.from(stats.visitors),
+            endpointCalls: stats.endpointCalls,
+            lastUpdated: stats.lastUpdated
+        }, null, 2));
+        
+        console.log(`[STATS] Loaded from GitHub: ${stats.apiCalls} calls, ${stats.visitors.size} visitors`);
+        return true;
+    } catch (error) {
+        if (error.status === 404) {
+            console.log('[STATS] No existing stats file on GitHub, starting fresh');
+        } else {
+            console.error('[STATS] Failed to load from GitHub:', error.message);
+        }
+        
+        // Try to load from local backup
+        try {
+            if (fs.existsSync(`./${STATS_FILE}`)) {
+                const localData = JSON.parse(fs.readFileSync(`./${STATS_FILE}`, 'utf8'));
+                stats.apiCalls = localData.apiCalls || 0;
+                stats.visitors = new Set(localData.visitors || []);
+                stats.endpointCalls = localData.endpointCalls || {};
+                console.log(`[STATS] Loaded from local backup: ${stats.apiCalls} calls, ${stats.visitors.size} visitors`);
+            }
+        } catch (localError) {
+            console.error('[STATS] Failed to load local backup:', localError);
+        }
+        
+        return false;
     }
-    
-    statsCache.lastSync = new Date().toISOString();
-    
-    console.log(`[GITHUB] Stats loaded: ${statsCache.apiCalls} API calls, ${statsCache.visitors.size} visitors`);
-    return true;
-  } catch (error) {
-    if (error.status === 404) {
-      console.log('[GITHUB] Stats file not found, creating new one...');
-      await saveStatsToGitHub(true);
-      return true;
-    }
-    console.error('[GITHUB] Error loading stats:', error.message);
-    return false;
-  }
 }
 
 // Save stats to GitHub
-async function saveStatsToGitHub(isNew = false) {
-  try {
-    const statsData = {
-      apiCalls: statsCache.apiCalls,
-      visitors: Array.from(statsCache.visitors),
-      endpointCalls: statsCache.endpointCalls,
-      lastUpdated: new Date().toISOString(),
-      serverVersion: '3.0.0'
-    };
+async function saveStatsToGitHub() {
+    try {
+        const statsData = {
+            apiCalls: stats.apiCalls,
+            visitors: Array.from(stats.visitors),
+            endpointCalls: stats.endpointCalls,
+            lastUpdated: new Date().toISOString()
+        };
 
-    const content = JSON.stringify(statsData, null, 2);
-    const contentEncoded = Buffer.from(content).toString('base64');
+        // Get current file SHA if exists
+        let sha = null;
+        try {
+            const { data } = await octokit.repos.getContent({
+                owner,
+                repo,
+                path: STATS_FILE
+            });
+            sha = data.sha;
+        } catch (err) {
+            if (err.status !== 404) throw err;
+        }
 
-    if (isNew) {
-      // Create new file
-      await octokit.repos.createOrUpdateFileContents({
-        owner: GITHUB_CONFIG.owner,
-        repo: GITHUB_CONFIG.repo,
-        path: GITHUB_CONFIG.path,
-        message: 'Initialize stats tracking',
-        content: contentEncoded,
-        branch: GITHUB_CONFIG.branch
-      });
-    } else {
-      // Update existing file - need SHA
-      const { data: existingFile } = await octokit.repos.getContent({
-        owner: GITHUB_CONFIG.owner,
-        repo: GITHUB_CONFIG.repo,
-        path: GITHUB_CONFIG.path,
-        ref: GITHUB_CONFIG.branch
-      });
+        const contentEncoded = Buffer.from(JSON.stringify(statsData, null, 2)).toString('base64');
 
-      await octokit.repos.createOrUpdateFileContents({
-        owner: GITHUB_CONFIG.owner,
-        repo: GITHUB_CONFIG.repo,
-        path: GITHUB_CONFIG.path,
-        message: `Update stats - API Calls: ${statsCache.apiCalls}, Visitors: ${statsCache.visitors.size}`,
-        content: contentEncoded,
-        sha: existingFile.sha,
-        branch: GITHUB_CONFIG.branch
-      });
+        await octokit.repos.createOrUpdateFileContents({
+            owner,
+            repo,
+            path: STATS_FILE,
+            message: `Update API stats - ${stats.apiCalls} calls, ${stats.visitors.size} visitors`,
+            content: contentEncoded,
+            sha: sha || undefined,
+        });
+
+        // Also update local backup
+        fs.writeFileSync(`./${STATS_FILE}`, JSON.stringify(statsData, null, 2));
+        
+        console.log(`[STATS] Saved to GitHub: ${stats.apiCalls} calls, ${stats.visitors.size} visitors`);
+        return true;
+    } catch (error) {
+        console.error('[STATS] Failed to save to GitHub:', error.message);
+        
+        // Save locally as fallback
+        try {
+            const statsData = {
+                apiCalls: stats.apiCalls,
+                visitors: Array.from(stats.visitors),
+                endpointCalls: stats.endpointCalls,
+                lastUpdated: new Date().toISOString()
+            };
+            fs.writeFileSync(`./${STATS_FILE}`, JSON.stringify(statsData, null, 2));
+        } catch (localError) {
+            console.error('[STATS] Failed to save locally:', localError);
+        }
+        
+        return false;
     }
-
-    statsCache.lastSync = new Date().toISOString();
-    console.log(`[GITHUB] Stats saved: ${statsCache.apiCalls} calls, ${statsCache.visitors.size} visitors`);
-    return true;
-  } catch (error) {
-    console.error('[GITHUB] Error saving stats:', error.message);
-    return false;
-  }
 }
 
-// Auto-save stats every 5 minutes
+// Auto-save every minute
 function startAutoSave() {
-  setInterval(async () => {
-    if (statsCache.lastSync) {
-      await saveStatsToGitHub();
-    }
-  }, 5 * 60 * 1000); // 5 minutes
+    setInterval(async () => {
+        await saveStatsToGitHub();
+    }, 60000); // Every 1 minute
+    
+    console.log('[STATS] Auto-save started (every 1 minute)');
 }
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
   message: {
     status: false,
     message: "Too many requests from this IP, please try again later."
@@ -164,7 +182,7 @@ app.use('/download', limiter);
 app.use('/search', limiter);
 
 // ============================================
-// HEALTH CHECK ENDPOINT
+// HEALTH CHECK ENDPOINT (Koyeb requirement)
 // ============================================
 app.get('/health', (req, res) => {
   res.status(200).json({
@@ -173,182 +191,258 @@ app.get('/health', (req, res) => {
     uptime: process.uptime(),
     version: '3.0.0',
     stats: {
-      apiCalls: statsCache.apiCalls,
-      visitors: statsCache.visitors.size,
-      lastSync: statsCache.lastSync
+        apiCalls: stats.apiCalls,
+        visitors: stats.visitors.size
     }
   });
 });
 
 // ============================================
-// STATS ENDPOINTS (with GitHub persistence)
+// STATS ENDPOINTS (for documentation frontend)
 // ============================================
 
 // Get stats
-app.get('/stats', async (req, res) => {
+app.get('/stats', (req, res) => {
   res.json({
-    apiCalls: statsCache.apiCalls,
-    visitors: statsCache.visitors.size,
-    endpointCalls: statsCache.endpointCalls,
-    lastSync: statsCache.lastSync,
+    apiCalls: stats.apiCalls,
+    visitors: stats.visitors.size,
+    endpointCalls: stats.endpointCalls,
+    lastUpdated: stats.lastUpdated,
     timestamp: new Date().toISOString()
   });
 });
 
 // Increment stats
-app.post('/stats/increment', async (req, res) => {
+app.post('/stats/increment', (req, res) => {
   const { type, endpoint } = req.body;
   
   if (type === 'visitor') {
-    const visitorId = req.headers['x-forwarded-for'] || req.ip;
-    const wasNew = !statsCache.visitors.has(visitorId);
-    statsCache.visitors.add(visitorId);
+    const visitorId = req.headers['x-forwarded-for'] || req.ip || crypto.randomUUID();
+    const isNewVisitor = !stats.visitors.has(visitorId);
+    stats.visitors.add(visitorId);
     
-    // Save immediately if new visitor
-    if (wasNew) {
-      await saveStatsToGitHub();
-    }
+    res.json({ 
+        success: true, 
+        isNewVisitor,
+        stats: {
+            apiCalls: stats.apiCalls,
+            visitors: stats.visitors.size
+        }
+    });
   } else if (type === 'apiCall') {
-    statsCache.apiCalls++;
+    stats.apiCalls++;
     if (endpoint) {
-      statsCache.endpointCalls[endpoint] = (statsCache.endpointCalls[endpoint] || 0) + 1;
+      stats.endpointCalls[endpoint] = (stats.endpointCalls[endpoint] || 0) + 1;
     }
     
-    // Batch save - every 10 API calls
-    if (statsCache.apiCalls % 10 === 0) {
-      await saveStatsToGitHub();
-    }
+    res.json({ 
+        success: true, 
+        stats: {
+            apiCalls: stats.apiCalls,
+            visitors: stats.visitors.size
+        }
+    });
+  } else {
+    res.status(400).json({ success: false, message: 'Invalid type' });
   }
-  
-  res.json({ 
-    success: true, 
-    stats: {
-      apiCalls: statsCache.apiCalls,
-      visitors: statsCache.visitors.size
-    }
-  });
-});
-
-// Force sync stats to GitHub (admin endpoint)
-app.post('/stats/sync', async (req, res) => {
-  const success = await saveStatsToGitHub();
-  res.json({
-    success,
-    stats: {
-      apiCalls: statsCache.apiCalls,
-      visitors: statsCache.visitors.size,
-      lastSync: statsCache.lastSync
-    }
-  });
 });
 
 // ============================================
-// API ROUTES (with stats increment)
+// API ROUTES
 // ============================================
 
+// YouTube Download Endpoint
 app.get('/download/youtubedl', async (req, res) => {
   try {
     const url = req.query.url;
+    
     if (!url || (!url.includes('youtube.com') && !url.includes('youtu.be'))) {
       return res.status(400).json({ 
         status: false, 
         message: "Please provide a valid YouTube URL" 
       });
     }
+
     const youtubeData = await youtubedl(url);
-    statsCache.apiCalls++;
-    res.json({ status: true, creator: "WALUKA🇱🇰", result: youtubeData });
+
+    res.json({
+      status: true,
+      creator: "WALUKA🇱🇰",
+      result: youtubeData
+    });
+
   } catch (error) {
     console.error('API Error:', error);
-    res.status(500).json({ status: false, message: error.message });
+    res.status(500).json({ 
+      status: false, 
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
+// YouTube Download V2 Endpoint
 app.get('/download/youtubedl2', async (req, res) => {
   try {
     const url = req.query.url;
+    
     if (!url || !url.includes('youtu')) {
-      return res.status(400).json({ status: false, message: "Please provide a valid YouTube URL" });
+      return res.status(400).json({ 
+        status: false, 
+        message: "Please provide a valid YouTube URL" 
+      });
     }
+
     const youtubeData = await youtubedl2(url);
-    statsCache.apiCalls++;
-    res.json({ status: true, creator: "WALUKA🇱🇰", result: youtubeData });
+
+    res.json({
+      status: true,
+      creator: "WALUKA🇱🇰",
+      result: youtubeData
+    });
+
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    console.error('API Error:', error);
+    res.status(500).json({ 
+      status: false, 
+      message: error.message
+    });
   }
 });
 
+// TikTok Download Endpoint
 app.get('/download/tiktokdl', async (req, res) => {
   try {
     if (!req.query.url) {
-      return res.status(400).json({ success: false, message: "Please provide a valid Tiktok URL" });
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid Tiktok URL"
+      });
     }
+    
     const tiktokData = await tiktokdl(req.query.url);
-    statsCache.apiCalls++;
-    res.json({ status: true, creator: "WALUKA🇱🇰", result: tiktokData });
+    
+    res.json({
+      status: true,
+      creator: "WALUKA🇱🇰",
+      result: tiktokData
+    });
+    
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 });
 
+// Instagram Download Endpoint
 app.get('/download/instagramdl', async (req, res) => {
   try {
     if (!req.query.url) {
-      return res.status(400).json({ success: false, message: "Please provide a valid Instagram URL" });
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid Instagram URL"
+      });
     }
     const instagramData = await instagramdl(req.query.url);
-    statsCache.apiCalls++;
-    res.json({ status: true, creator: "WALUKA🇱🇰", result: instagramData });
+
+    res.json({
+      status: true,
+      creator: "WALUKA🇱🇰",
+      result: instagramData
+    });
+    
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 });
 
+// Free Fire Player Info Endpoint
 app.get('/search/freefire', async (req, res) => {
   try {
     const { region, uid } = req.query;
+    
     if (!region || !uid) {
-      return res.status(400).json({ status: false, message: "Please provide both region and uid parameters" });
+      return res.status(400).json({ 
+        status: false, 
+        message: "Please provide both region and uid parameters" 
+      });
     }
+
     const playerData = await freefireinfo(region, uid);
-    statsCache.apiCalls++;
-    res.json({ status: true, creator: "WALUKA🇱🇰", result: playerData });
+
+    res.json({
+      status: true,
+      creator: "WALUKA🇱🇰",
+      result: playerData
+    });
+
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    console.error('API Error:', error);
+    res.status(500).json({ 
+      status: false, 
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
+// Text Photo Generation Endpoint
 app.get('/download/textphoto', async (req, res) => {
   try {
     const { url, text } = req.query;
+    
     if (!url) {
-      return res.status(400).json({ status: false, message: "Please provide a URL parameter" });
+      return res.status(400).json({
+        status: false,
+        message: "Please provide a URL parameter"
+      });
     }
+    
     if (!text) {
-      return res.status(400).json({ status: false, message: "Please provide a text parameter" });
+      return res.status(400).json({
+        status: false,
+        message: "Please provide a text parameter"
+      });
     }
+
     const result = await maker(url, text);
-    statsCache.apiCalls++;
-    res.json({ status: true, creator: "WALUKA🇱🇰", result: result });
+    
+    res.json({
+      status: true,
+      creator: "WALUKA🇱🇰",
+      result: result
+    });
+    
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    res.status(500).json({
+      status: false,
+      message: error.message
+    });
   }
 });
 
 // ============================================
-// STATIC FILES
+// STATIC FILES (Documentation from public folder)
 // ============================================
 
+// Serve index.html at root from public folder
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Serve static files from public folder
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ============================================
 // ERROR HANDLING
 // ============================================
 
+// 404 handler
 app.use((req, res) => {
   res.status(404).json({
     status: false,
@@ -364,6 +458,7 @@ app.use((req, res) => {
   });
 });
 
+// Global error handler
 app.use((err, req, res, next) => {
   console.error('Server Error:', err);
   res.status(500).json({
@@ -379,22 +474,22 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3000;
 
-async function initializeServer() {
-  console.log('\n╔══════════════════════════════════════════╗');
-  console.log('║       SRI API V3.0 - GitHub Sync         ║');
-  console.log('╚══════════════════════════════════════════╝\n');
-  
-  await loadStatsFromGitHub();
-  startAutoSave();
-  
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`
+// Initialize and start
+async function startServer() {
+    // Load stats from GitHub first
+    await loadStatsFromGitHub();
+    
+    // Start auto-save
+    startAutoSave();
+    
+    app.listen(PORT, '0.0.0.0', () => {
+        console.log(`
 ╔══════════════════════════════════════════╗
 ║           SRI API V3.0                   ║
 ║       Server running on port ${PORT}        ║
 ║                                          ║
-║  📊 Stats synced to GitHub               ║
-║  📁 Repo: Walukapaha/SRI-API-STORE       ║
+║  Stats: ${stats.apiCalls} calls, ${stats.visitors.size} visitors    ║
+║  GitHub: Auto-save every 1 minute        ║
 ║                                          ║
 ║  Endpoints:                              ║
 ║  • /download/youtubedl                   ║
@@ -406,25 +501,11 @@ async function initializeServer() {
 ║                                          ║
 ║  Health: /health                         ║
 ║  Stats:   /stats                         ║
-║  Sync:    POST /stats/sync               ║
 ╚══════════════════════════════════════════╝
-    `);
-  });
+        `);
+    });
 }
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('\n[SIGTERM] Saving stats before shutdown...');
-  await saveStatsToGitHub();
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  console.log('\n[SIGINT] Saving stats before shutdown...');
-  await saveStatsToGitHub();
-  process.exit(0);
-});
-
-initializeServer();
+startServer();
 
 module.exports = app;
