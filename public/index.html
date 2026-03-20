@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SRI API V3.0 - Pure System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root { --bg-primary: #fafafa; --bg-secondary: #ffffff; --text-primary: #000000; --text-secondary: #666666; --border: #e5e5e5; --accent: #000000; --hover: #f5f5f5; --code-bg: #0a0a0a; --success: #22c55e; --error: #ef4444; --warning: #f59e0b; --sidebar-width: 320px; }
+        html { scroll-behavior: smooth; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg-primary); color: var(--text-primary); line-height: 1.6; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
+        .dot-pattern { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-image: radial-gradient(circle, #d4d4d4 1px, transparent 1px); background-size: 24px 24px; opacity: 0.5; pointer-events: none; z-index: 0; }
+        .navbar { position: fixed; top: 0; left: 0; right: 0; height: 64px; background: rgba(250, 250, 250, 0.95); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); z-index: 1000; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; }
+        .nav-left { display: flex; align-items: center; gap: 16px; }
+        .menu-toggle { width: 40px; height: 40px; border: none; background: transparent; cursor: pointer; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 5px; border-radius: 8px; transition: background 0.2s; }
+        .menu-toggle:hover { background: var(--hover); }
+        .menu-toggle span { display: block; width: 20px; height: 2px; background: var(--text-primary); transition: all 0.3s; }
+        .nav-logo { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+        .nav-logo:hover { opacity: 0.7; }
+        .nav-logo-icon { width: 32px; height: 32px; background: var(--accent); color: white; display: flex; align-items: center; justify-content: center; border-radius: 8px; font-size: 14px; }
+        .nav-right { display: flex; align-items: center; gap: 16px; }
+        
+        /* Stats Counter Styles - Desktop & Mobile */
+        .nav-stats { display: flex; align-items: center; gap: 12px; }
+        .stat-item { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 100px; font-size: 12px; font-weight: 600; color: var(--text-secondary); transition: all 0.2s; }
+        .stat-item:hover { background: var(--hover); border-color: var(--accent); color: var(--text-primary); }
+        .stat-icon { width: 14px; height: 14px; color: var(--accent); }
+        .stat-value { color: var(--accent); font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+        
+        /* Mobile Stats - Compact version */
+        @media (max-width: 768px) { 
+            .navbar { padding: 0 12px; }
+            .nav-stats { gap: 8px; }
+            .stat-item { 
+                padding: 4px 8px; 
+                font-size: 11px; 
+                border-radius: 8px;
+            }
+            .stat-icon { width: 12px; height: 12px; }
+            .stat-value { font-size: 11px; }
+            .stat-item span:last-child { display: none; } /* Hide "Calls" and "Visitors" text on mobile */
+        }
+        
+        /* Extra small screens */
+        @media (max-width: 380px) {
+            .nav-logo span { display: none; } /* Hide "SRI API" text, show only icon */
+            .stat-item { padding: 4px 6px; }
+        }
+        
+        .sidebar { position: fixed; top: 64px; left: 0; width: var(--sidebar-width); height: calc(100vh - 64px); background: var(--bg-secondary); border-right: 1px solid var(--border); overflow-y: auto; z-index: 999; transform: translateX(-100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); display: flex; flex-direction: column; }
+        .sidebar.active { transform: translateX(0); }
+        .sidebar-overlay { position: fixed; top: 64px; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.3); opacity: 0; visibility: hidden; transition: all 0.3s; z-index: 998; }
+        .sidebar-overlay.active { opacity: 1; visibility: visible; }
+        .sidebar-search { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+        .sidebar-search-input { width: 100%; padding: 12px 16px; border: 1px solid var(--border); border-radius: 12px; font-size: 14px; background: var(--bg-primary); transition: all 0.2s; }
+        .sidebar-search-input:focus { outline: none; border-color: var(--accent); background: var(--bg-secondary); }
+        .sidebar-search-input::placeholder { color: var(--text-secondary); }
+        .search-clear { position: absolute; right: 28px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; border: none; background: var(--border); border-radius: 50%; cursor: pointer; display: none; align-items: center; justify-content: center; font-size: 12px; color: var(--text-secondary); }
+        .search-clear.visible { display: flex; }
+        .search-clear:hover { background: var(--text-secondary); color: white; }
+        .sidebar-search-wrapper { position: relative; }
+        .sidebar-content { flex: 1; overflow-y: auto; padding: 16px 0; }
+        .sidebar-section { margin-bottom: 8px; }
+        .sidebar-section-title { padding: 8px 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-secondary); display: flex; align-items: center; justify-content: space-between; }
+        .sidebar-section-count { background: var(--bg-primary); padding: 2px 8px; border-radius: 100px; font-size: 10px; color: var(--text-secondary); }
+        .sidebar-menu { list-style: none; padding: 0 12px; }
+        .sidebar-item { margin: 2px 0; }
+        .sidebar-link { display: flex; align-items: center; gap: 12px; padding: 10px 12px; color: var(--text-secondary); text-decoration: none; font-size: 13px; font-weight: 500; border-radius: 8px; transition: all 0.2s; cursor: pointer; position: relative; }
+        .sidebar-link:hover { background: var(--hover); color: var(--text-primary); }
+        .sidebar-link.active { background: var(--accent); color: white; }
+        .sidebar-link.hidden { display: none; }
+        .sidebar-link.highlight { background: #fef3c7; color: #92400e; }
+        .sidebar-link.highlight:hover { background: #fde68a; }
+        .sidebar-icon { width: 18px; height: 18px; opacity: 0.7; flex-shrink: 0; }
+        .sidebar-link.active .sidebar-icon { opacity: 1; }
+        .endpoint-badge { margin-left: auto; font-size: 10px; padding: 2px 6px; background: rgba(0,0,0,0.1); border-radius: 4px; font-weight: 600; }
+        .sidebar-link.active .endpoint-badge { background: rgba(255,255,255,0.2); }
+        .status-indicator { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; position: relative; }
+        .status-indicator::after { content: ''; position: absolute; top: 50%; left: 50%; width: 100%; height: 100%; border-radius: 50%; transform: translate(-50%, -50%); animation: pulse 2s ease-out infinite; }
+        .status-online { background: var(--success); }
+        .status-online::after { background: var(--success); }
+        .status-offline { background: var(--error); }
+        .status-offline::after { background: var(--error); }
+        .status-checking { background: var(--warning); }
+        .status-checking::after { background: var(--warning); animation: pulse 1s ease-out infinite; }
+        @keyframes pulse { 0% { transform: translate(-50%, -50%) scale(1); opacity: 0.8; } 100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; } }
+        .no-results { padding: 40px 20px; text-align: center; color: var(--text-secondary); font-size: 14px; }
+        .no-results-icon { width: 48px; height: 48px; margin: 0 auto 16px; opacity: 0.3; }
+        .sidebar-footer { padding: 16px 20px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-secondary); text-align: center; }
+        .main-content { margin-top: 64px; margin-left: 0; min-height: calc(100vh - 64px); position: relative; z-index: 1; }
+        @media (min-width: 1024px) { .sidebar { transform: translateX(0); } .main-content { margin-left: var(--sidebar-width); } .menu-toggle { display: none; } .sidebar-overlay { display: none !important; } }
+        .hero { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: calc(100vh - 64px); text-align: center; padding: 48px 24px; position: relative; transition: all 0.3s ease; }
+        .hero.compact { min-height: auto; padding: 32px 24px; }
+        .version-badge { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 100px; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 32px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+        .hero-title { font-size: clamp(36px, 10vw, 80px); font-weight: 900; line-height: 0.95; letter-spacing: -0.04em; margin-bottom: 24px; transition: all 0.3s ease; }
+        .hero.compact .hero-title { font-size: clamp(28px, 6vw, 56px); margin-bottom: 16px; }
+        .hero-title .outline { color: transparent; -webkit-text-stroke: 2px var(--text-primary); text-stroke: 2px var(--text-primary); }
+        @media (max-width: 480px) { .hero-title .outline { -webkit-text-stroke: 1.5px var(--text-primary); } }
+        .hero-description { font-size: clamp(14px, 3vw, 18px); color: var(--text-secondary); max-width: 480px; margin-bottom: 48px; line-height: 1.6; transition: all 0.3s ease; padding: 0 16px; }
+        .hero.compact .hero-description { margin-bottom: 24px; font-size: clamp(13px, 2.5vw, 16px); }
+        .hero-description strong { color: var(--text-primary); font-weight: 600; }
+        .home-search-container { width: 100%; max-width: 600px; margin: 0 auto 32px; position: relative; z-index: 10; padding: 0 16px; }
+        .home-search-box { position: relative; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 16px; padding: 4px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); transition: all 0.3s ease; }
+        .home-search-box:focus-within { border-color: var(--accent); box-shadow: 0 8px 30px rgba(0,0,0,0.12); transform: translateY(-2px); }
+        .home-search-input-wrapper { display: flex; align-items: center; padding: 12px 16px; }
+        .home-search-icon { width: 24px; height: 24px; color: var(--text-secondary); margin-right: 12px; flex-shrink: 0; }
+        .home-search-input { flex: 1; border: none; background: transparent; font-size: 16px; color: var(--text-primary); outline: none; font-family: 'Inter', sans-serif; min-width: 0; }
+        .home-search-input::placeholder { color: var(--text-secondary); font-size: 14px; }
+        @media (max-width: 480px) { .home-search-input::placeholder { font-size: 13px; } }
+        .home-search-clear { width: 28px; height: 28px; border: none; background: var(--hover); border-radius: 50%; cursor: pointer; display: none; align-items: center; justify-content: center; color: var(--text-secondary); transition: all 0.2s; flex-shrink: 0; }
+        .home-search-clear.visible { display: flex; }
+        .home-search-clear:hover { background: var(--border); color: var(--text-primary); }
+        .home-search-shortcut { padding: 6px 10px; background: var(--bg-primary); border-radius: 8px; font-size: 12px; font-weight: 600; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; margin-left: 8px; flex-shrink: 0; }
+        @media (max-width: 480px) { .home-search-shortcut { display: none; } }
+        .search-results-section { width: 100%; max-width: 900px; margin: 0 auto; padding: 0 24px 48px; display: none; animation: fadeInUp 0.4s ease; }
+        .search-results-section.active { display: block; }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .search-results-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 12px; }
+        .search-results-title { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-secondary); }
+        .search-results-count { font-size: 13px; color: var(--text-secondary); background: var(--bg-secondary); padding: 6px 12px; border-radius: 100px; border: 1px solid var(--border); }
+        .search-results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+        @media (max-width: 640px) { .search-results-grid { grid-template-columns: 1fr; } }
+        .search-result-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 16px; padding: 20px; cursor: pointer; transition: all 0.3s ease; position: relative; overflow: hidden; }
+        .search-result-card::before { content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--accent); transform: scaleY(0); transition: transform 0.3s ease; }
+        .search-result-card:hover { border-color: var(--accent); transform: translateY(-4px); box-shadow: 0 12px 40px rgba(0,0,0,0.1); }
+        .search-result-card:hover::before { transform: scaleY(1); }
+        .search-result-category { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin-bottom: 12px; }
+        .search-result-name { font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; line-height: 1.4; }
+        .search-result-description { font-size: 13px; color: var(--text-secondary); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .search-result-meta { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+        .search-result-method { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; padding: 4px 8px; background: var(--accent); color: white; border-radius: 4px; }
+        .search-result-path { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .search-no-results { text-align: center; padding: 64px 24px; background: var(--bg-secondary); border-radius: 16px; border: 1px solid var(--border); }
+        .search-no-results-icon { width: 64px; height: 64px; margin: 0 auto 24px; color: var(--border); }
+        .search-no-results-title { font-size: 20px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; }
+        .search-no-results-text { font-size: 14px; color: var(--text-secondary); }
+        .search-suggestions { margin-top: 24px; }
+        .search-suggestions-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin-bottom: 12px; }
+        .search-suggestion-tags { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+        .search-suggestion-tag { padding: 8px 16px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 100px; font-size: 13px; color: var(--text-secondary); cursor: pointer; transition: all 0.2s; }
+        .search-suggestion-tag:hover { background: var(--accent); color: white; border-color: var(--accent); }
+        .hero-buttons { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 400px; align-items: center; justify-content: center; }
+        @media (min-width: 480px) { .hero-buttons { flex-direction: row; max-width: none; justify-content: center; } }
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 16px 32px; font-size: 14px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; text-decoration: none; border-radius: 100px; transition: all 0.3s; cursor: pointer; border: none; position: relative; overflow: hidden; white-space: nowrap; }
+        @media (max-width: 480px) { .btn { padding: 14px 24px; font-size: 13px; width: 100%; max-width: 280px; } }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+        .btn-secondary { background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); }
+        .btn-secondary:hover { background: var(--hover); transform: translateY(-2px); }
+        .btn-icon { width: 18px; height: 18px; transition: transform 0.3s; }
+        .btn:hover .btn-icon { transform: translateX(4px); }
+        .api-section { display: none; max-width: 800px; margin: 0 auto; padding: 48px 24px; animation: fadeIn 0.4s ease; }
+        .api-section.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .section-header { margin-bottom: 32px; }
+        .back-btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 100px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); text-decoration: none; margin-bottom: 24px; cursor: pointer; transition: all 0.2s; }
+        .back-btn:hover { background: var(--hover); color: var(--text-primary); }
+        .section-title { font-size: clamp(28px, 6vw, 48px); font-weight: 800; letter-spacing: -0.03em; margin-bottom: 16px; }
+        .endpoint-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 16px; padding: 24px; margin-bottom: 24px; transition: all 0.3s; cursor: pointer; }
+        .endpoint-card:hover { border-color: var(--text-primary); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+        .endpoint-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+        @media (max-width: 480px) { .endpoint-header { flex-direction: column; } }
+        .endpoint-method { display: inline-flex; align-items: center; padding: 4px 12px; background: var(--accent); color: white; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; border-radius: 6px; text-transform: uppercase; }
+        .endpoint-name { font-size: clamp(16px, 4vw, 20px); font-weight: 700; letter-spacing: -0.02em; margin-bottom: 8px; }
+        .endpoint-description { font-size: 14px; color: var(--text-secondary); line-height: 1.6; }
+        .endpoint-icon { width: 48px; height: 48px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .endpoint-icon svg { width: 24px; height: 24px; opacity: 0.6; }
+        .endpoint-detail { display: none; max-width: 900px; margin: 0 auto; padding: 48px 24px; animation: fadeIn 0.4s ease; }
+        .endpoint-detail.active { display: block; }
+        .detail-header { margin-bottom: 32px; }
+        .detail-badges { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+        .badge { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+        .badge-get { background: var(--accent); color: white; }
+        .badge-json { background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-secondary); }
+        .detail-title { font-size: clamp(24px, 5vw, 42px); font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; margin-bottom: 16px; }
+        .detail-description { font-size: 16px; color: var(--text-secondary); line-height: 1.6; }
+        .url-box { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: 24px 0; display: flex; align-items: center; gap: 12px; font-family: 'JetBrains Mono', monospace; font-size: 13px; overflow-x: auto; }
+        .url-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-secondary); margin-bottom: 8px; }
+        .url-content { flex: 1; overflow-x: auto; white-space: nowrap; color: var(--text-primary); min-width: 0; }
+        .copy-btn { width: 36px; height: 36px; border: 1px solid var(--border); background: var(--bg-primary); border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0; }
+        .copy-btn:hover { background: var(--hover); border-color: var(--text-primary); }
+        .test-section { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 16px; padding: 24px; margin: 24px 0; }
+        .test-title { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-secondary); margin-bottom: 16px; }
+        .test-inputs { display: flex; flex-direction: column; gap: 16px; margin-bottom: 16px; }
+        .input-group { display: flex; flex-direction: column; gap: 8px; }
+        .input-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+        .test-input { padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 14px; background: var(--bg-primary); color: var(--text-primary); transition: all 0.2s; width: 100%; }
+        .test-input:focus { outline: none; border-color: var(--accent); }
+        .test-input::placeholder { color: var(--text-secondary); opacity: 0.5; }
+        .action-buttons { display: flex; gap: 12px; margin: 24px 0; flex-wrap: wrap; }
+        @media (max-width: 480px) { .action-buttons { flex-direction: column; } .action-buttons .btn { max-width: none; } }
+        .btn-test { flex: 1; background: var(--accent); color: white; }
+        .btn-open { flex: 1; background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-primary); }
+        .response-section { margin-top: 32px; display: none; }
+        .response-section.active { display: block; animation: slideDown 0.3s ease; }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .response-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
+        .response-status { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 8px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+        .status-success { background: #dcfce7; color: #166534; }
+        .status-error { background: #fee2e2; color: #991b1b; }
+        .status-loading { background: #fef3c7; color: #92400e; }
+        .response-time { font-size: 12px; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; }
+        .response-body { background: var(--code-bg); border-radius: 16px; overflow: hidden; }
+        .response-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; background: rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.1); flex-wrap: wrap; gap: 12px; }
+        .response-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: rgba(255,255,255,0.5); }
+        .response-actions { display: flex; gap: 8px; }
+        .toolbar-btn { padding: 6px 12px; background: rgba(255,255,255,0.1); border: none; border-radius: 6px; color: rgba(255,255,255,0.7); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; transition: all 0.2s; }
+        .toolbar-btn:hover { background: rgba(255,255,255,0.2); color: white; }
+        .response-content { padding: 20px; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.6; color: #e4e4e4; overflow-x: auto; max-height: 500px; overflow-y: auto; }
+        @media (max-width: 480px) { .response-content { font-size: 11px; padding: 16px; } }
+        .json-key { color: #7ee787; }
+        .json-string { color: #a5d6ff; }
+        .json-number { color: #79c0ff; }
+        .json-boolean { color: #ff7b72; }
+        .json-null { color: #ff7b72; }
+        .code-block { background: var(--code-bg); border-radius: 16px; overflow: hidden; margin: 24px 0; }
+        .code-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); flex-wrap: wrap; gap: 12px; }
+        .code-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+        .code-tab { padding: 6px 12px; background: transparent; border: none; color: rgba(255,255,255,0.5); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; border-radius: 6px; transition: all 0.2s; }
+        .code-tab.active { background: rgba(255,255,255,0.1); color: white; }
+        .code-content { padding: 20px; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.6; color: #e4e4e4; overflow-x: auto; }
+        @media (max-width: 480px) { .code-content { font-size: 11px; padding: 16px; } }
+        .code-line { display: flex; gap: 16px; }
+        .line-number { color: rgba(255,255,255,0.3); user-select: none; min-width: 24px; text-align: right; }
+        .params-section { margin: 32px 0; }
+        .section-subtitle { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-secondary); margin-bottom: 16px; }
+        .params-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        .params-table th { text-align: left; padding: 12px 16px; font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+        .params-table td { padding: 16px; border-bottom: 1px solid var(--border); vertical-align: top; }
+        @media (max-width: 640px) { .params-table { font-size: 12px; } .params-table th, .params-table td { padding: 10px 8px; } }
+        .param-name { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--text-primary); }
+        .param-type { display: inline-block; padding: 2px 8px; background: var(--bg-primary); border-radius: 4px; font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+        .param-required { color: #ff4444; font-size: 11px; font-weight: 600; margin-left: 8px; }
+        .footer { text-align: center; padding: 48px 24px; border-top: 1px solid var(--border); margin-top: 64px; color: var(--text-secondary); font-size: 14px; }
+        .footer strong { color: var(--text-primary); }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+        @media (max-width: 768px) { :root { --sidebar-width: 280px; } .navbar { padding: 0 16px; } .hero { padding: 32px 16px; } .api-section, .endpoint-detail { padding: 24px 16px; } .search-results-section { padding: 0 16px 32px; } }
+        .loading { display: inline-block; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: white; animation: spin 1s ease-in-out infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .toast { position: fixed; bottom: 24px; right: 24px; background: var(--accent); color: white; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 500; transform: translateY(100px); opacity: 0; transition: all 0.3s; z-index: 9999; }
+        @media (max-width: 480px) { .toast { left: 16px; right: 16px; bottom: 16px; text-align: center; } }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .base-url-display { position: fixed; bottom: 80px; right: 24px; background: var(--bg-secondary); border: 1px solid var(--border); padding: 12px 16px; border-radius: 8px; font-size: 12px; color: var(--text-secondary); z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        @media (max-width: 768px) { .base-url-display { display: none; } }
+        .base-url-display strong { color: var(--text-primary); display: block; margin-bottom: 4px; }
+        .kbd { display: inline-block; padding: 2px 6px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+        .category-header { display: flex; align-items: center; gap: 12px; margin: 32px 0 16px; padding-bottom: 12px; border-bottom: 2px solid var(--border); }
+        .category-header:first-child { margin-top: 0; }
+        .category-title { font-size: 18px; font-weight: 700; color: var(--text-primary); }
+        .category-count { font-size: 12px; color: var(--text-secondary); background: var(--bg-primary); padding: 4px 10px; border-radius: 100px; }
+        
+        /* Health Check Status Panel - Updated */
+        .health-check-panel { position: fixed; bottom: 24px; right: 24px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; padding: 16px; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.1); min-width: 220px; }
+        @media (max-width: 768px) { .health-check-panel { display: none; } }
+        .health-check-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+        .health-check-status { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 8px; }
+        .health-check-time { font-size: 11px; color: var(--text-secondary); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+        .health-check-next { font-size: 11px; color: var(--text-secondary); margin-top: 6px; font-style: italic; }
+    </style>
+</head>
+<body>
+    <div class="dot-pattern"></div>
+    <nav class="navbar">
+        <div class="nav-left">
+            <button class="menu-toggle" onclick="toggleSidebar()">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-logo" onclick="showHome()">
+                <div class="nav-logo-icon">S</div>
+                <span>SRI API</span>
+            </div>
+        </div>
+        <div class="nav-right">
+            <!-- Stats Counters - Desktop & Mobile -->
+            <div class="nav-stats">
+                <div class="stat-item" title="Total API Calls">
+                    <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                    </svg>
+                    <span class="stat-value" id="apiCallsCounter">0</span>
+                    <span>Calls</span>
+                </div>
+                <div class="stat-item" title="Total Visitors">
+                    <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                    </svg>
+                    <span class="stat-value" id="visitorsCounter">0</span>
+                    <span>Visitors</span>
+                </div>
+            </div>
+        </div>
+    </nav>
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-search">
+            <div class="sidebar-search-wrapper">
+                <input type="text" class="sidebar-search-input" id="sidebarSearchInput" placeholder="Filter endpoints..." autocomplete="off">
+                <button class="search-clear" id="sidebarSearchClear" onclick="clearSidebarSearch()">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div class="sidebar-content" id="sidebarContent"></div>
+        <div class="sidebar-footer">Press <span class="kbd">/</span> to search - <span class="kbd">Esc</span> to close</div>
+    </aside>
+    <main class="main-content">
+        <section class="hero" id="homeSection">
+            <div class="version-badge"><span>SRI API V3.0</span></div>
+            <h1 class="hero-title">PURE<br><span class="outline">SYSTEM</span></h1>
+            <p class="hero-description">A minimal, monochromatic registry for high-performance APIs. <strong>No noise. Just data.</strong></p>
+            <div class="home-search-container">
+                <div class="home-search-box">
+                    <div class="home-search-input-wrapper">
+                        <svg class="home-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <path d="m21 21-4.35-4.35"></path>
+                        </svg>
+                        <input type="text" class="home-search-input" id="homeSearchInput" placeholder="Search APIs (e.g., 'youtube', 'download', 'free fire')..." autocomplete="off">
+                        <button class="home-search-clear" id="homeSearchClear" onclick="clearHomeSearch()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                        <span class="home-search-shortcut">/</span>
+                    </div>
+                </div>
+            </div>
+            <div class="hero-buttons" id="heroButtons">
+                <button class="btn btn-primary" onclick="showAllApis()">
+                    Browse All
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                </button>
+                <a href="https://github.com" class="btn btn-secondary" target="_blank">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    GitHub
+                </a>
+            </div>
+        </section>
+        <section class="search-results-section" id="searchResultsSection">
+            <div class="search-results-header">
+                <span class="search-results-title">Search Results</span>
+                <span class="search-results-count" id="searchResultsCount">0 endpoints found</span>
+            </div>
+            <div class="search-results-grid" id="searchResultsGrid"></div>
+        </section>
+        <section class="api-section" id="apiListSection">
+            <div class="section-header">
+                <button class="back-btn" onclick="showHome()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 12H5M12 19l-7-7 7-7"/>
+                    </svg>
+                    Back to Home
+                </button>
+                <h2 class="section-title" id="listTitle">All APIs</h2>
+            </div>
+            <div id="endpointsList"></div>
+        </section>
+        <section class="endpoint-detail" id="endpointDetail">
+            <div class="detail-header">
+                <button class="back-btn" onclick="goBackFromDetail()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 12H5M12 19l-7-7 7-7"/>
+                    </svg>
+                    Back to List
+                </button>
+                <div class="detail-badges">
+                    <span class="badge badge-get">GET</span>
+                    <span class="badge badge-json">JSON</span>
+                </div>
+                <h1 class="detail-title" id="detailTitle">Endpoint Name</h1>
+                <p class="detail-description" id="detailDescription">Endpoint description goes here.</p>
+                <div class="url-label">Endpoint URL</div>
+                <div class="url-box">
+                    <div class="url-content" id="endpointUrl">https://api.example.com/endpoint</div>
+                    <button class="copy-btn" onclick="copyToClipboard('endpointUrl')">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="params-section" id="paramsSection">
+                <h3 class="section-subtitle">Parameters</h3>
+                <table class="params-table">
+                    <thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>
+                    <tbody id="paramsTableBody"></tbody>
+                </table>
+            </div>
+            <div class="test-section">
+                <div class="test-title">Test Endpoint</div>
+                <div class="test-inputs" id="testInputs"></div>
+                <div class="action-buttons">
+                    <button class="btn btn-test" onclick="testEndpoint()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                        </svg>
+                        <span id="testBtnText">Send Request</span>
+                    </button>
+                    <button class="btn btn-open" onclick="openInBrowser()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                            <polyline points="15 3 21 3 21 9"></polyline>
+                            <line x1="10" y1="14" x2="21" y2="3"></line>
+                        </svg>
+                        Open in Browser
+                    </button>
+                </div>
+            </div>
+            <div class="response-section" id="responseSection">
+                <div class="response-header">
+                    <div class="response-status" id="responseStatus"><span class="loading"></span>Sending Request...</div>
+                    <div class="response-time" id="responseTime"></div>
+                </div>
+                <div class="response-body">
+                    <div class="response-toolbar">
+                        <span class="response-label">Response Body</span>
+                        <div class="response-actions">
+                            <button class="toolbar-btn" onclick="copyResponse()">Copy</button>
+                            <button class="toolbar-btn" onclick="downloadResponse()">Download</button>
+                        </div>
+                    </div>
+                    <pre class="response-content" id="responseContent">Waiting for request...</pre>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="code-header">
+                    <div class="code-tabs">
+                        <button class="code-tab active" onclick="switchTab('curl')">cURL</button>
+                        <button class="code-tab" onclick="switchTab('node')">Node.js</button>
+                        <button class="code-tab" onclick="switchTab('python')">Python</button>
+                        <button class="code-tab" onclick="switchTab('php')">PHP</button>
+                    </div>
+                    <button class="copy-btn" style="border-color: rgba(255,255,255,0.2); background: transparent;" onclick="copyCode()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="code-content" id="codeContent"></div>
+            </div>
+        </section>
+        <footer class="footer">
+            <p>Built with precision by <strong>WALUKA🇱🇰</strong></p>
+            <p style="margin-top: 8px; font-size: 12px;">SRI API V3.0 © 2024</p>
+        </footer>
+    </main>
+    <div class="toast" id="toast">Copied to clipboard!</div>
+    
+    <!-- Health Check Status Panel - Updated (Manual button and Base URL removed) -->
+    <div class="health-check-panel" id="healthCheckPanel">
+        <div class="health-check-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+            Daily Health Check
+        </div>
+        <div class="health-check-status" id="healthCheckStatus">
+            <span class="status-indicator status-checking"></span>
+            <span>Loading...</span>
+        </div>
+        <div class="health-check-time" id="healthCheckTime">Last checked: --</div>
+        <div class="health-check-next" id="healthCheckNext">Next check: Today at 12:00 AM</div>
+    </div>
+
+    <script>
+        // ============================================
+        // CONFIGURATION - Hugging Face Backend URL
+        // ============================================
+        // CHANGE THIS TO YOUR HUGGING FACE SPACE URL
+        const HF_BACKEND_URL = "https://srinetwork-api.hf.space"; 
+        
+        // For local testing, you can use: http://localhost:7860
+        // For production, use your Hugging Face Space URL
+
+        const getBaseUrl = () => window.location.origin;
+
+        const apiData = {
+            download: {
+                title: "Download",
+                icon: "download",
+                endpoints: [
+                    { name: "YouTube Downloader", path: "/download/youtubedl", method: "GET", status: "offline", description: "Download YouTube videos in multiple formats and qualities using ytsave.to API integration.", params: [{ name: "url", type: "string", required: true, description: "YouTube video URL (youtube.com or youtu.be)", placeholder: "https://youtube.com/watch?v=dQw4w9WgXcQ" }] },
+                    { name: "YouTube Downloader V2", path: "/download/youtubedl2", method: "GET", status: "offline", description: "Alternative YouTube downloader using ytdown.to API with enhanced format support.", params: [{ name: "url", type: "string", required: true, description: "YouTube video URL", placeholder: "https://youtube.com/watch?v=dQw4w9WgXcQ" }] },
+                    { name: "TikTok Downloader", path: "/download/tiktokdl", method: "GET", status: "offline", description: "Download TikTok videos without watermark, with metadata and music extraction support.", params: [{ name: "url", type: "string", required: true, description: "TikTok video URL (tiktok.com or vm.tiktok.com)", placeholder: "https://vt.tiktok.com/ZSuYLQkMm/" }] },
+                    { name: "Instagram Downloader", path: "/download/instagramdl", method: "GET", status: "offline", description: "Download Instagram videos, reels, and images with thumbnail extraction.", params: [{ name: "url", type: "string", required: true, description: "Instagram post/reel URL", placeholder: "https://www.instagram.com/reel/DKR-FW1yo_p/?igsh=eG05NTh3MnUxcnE3" }] },
+                    { name: "Text to Photo", path: "/download/textphoto", method: "GET", status: "offline", description: "Generate stylized text images using ephoto360, photooxy, and textpro templates.", params: [{ name: "url", type: "string", required: true, description: "Template URL from ephoto360.com, photooxy.com, or textpro.me", placeholder: "https://textpro.me/create-naruto-logo-style-text-effect-online-1125.html" }, { name: "text", type: "string", required: true, description: "First text parameter", placeholder: "SRI API W" }] }
+                ]
+            },
+            search: {
+                title: "Search",
+                icon: "search",
+                endpoints: [
+                    { name: "Free Fire Player Info", path: "/search/freefire", method: "GET", status: "offline", description: "Retrieve detailed player statistics, clan info, and profile data from Free Fire game.", params: [{ name: "region", type: "string", required: true, description: "Game server region (e.g., SG, ID, BR, US)", placeholder: "SG" }, { name: "uid", type: "string", required: true, description: "Player unique ID number", placeholder: "2326343985" }] }
+                ]
+            }
+        };
+
+        let currentCategory = null, currentEndpoint = null, currentResponse = null, currentTab = 'curl', sidebarSearchQuery = '', isShowingAllApis = false;
+
+        // ============================================
+        // STATS SYSTEM - API Calls & Visitors (HF Backend)
+        // ============================================
+        
+        const STATS_CONFIG = {
+            visitorDateKey: 'sri_api_visitor_date',
+            visitorIdKey: 'sri_api_visitor_id'
+        };
+
+        async function initStats() {
+            // Track visitor (daily unique)
+            await trackDailyUniqueVisitor();
+            // Load and display stats from HF backend
+            await updateStatsDisplay();
+        }
+
+        async function trackDailyUniqueVisitor() {
+            const today = new Date().toISOString().split('T')[0];
+            const lastVisitDate = localStorage.getItem(STATS_CONFIG.visitorDateKey);
+            
+            if (lastVisitDate !== today) {
+                // New visitor - send to backend
+                try {
+                    await fetch(`${HF_BACKEND_URL}/stats/increment`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ type: 'visitor' })
+                    });
+                    localStorage.setItem(STATS_CONFIG.visitorDateKey, today);
+                    console.log('[STATS] New visitor tracked');
+                } catch (e) {
+                    console.log('[STATS] Failed to track visitor:', e);
+                }
+            }
+        }
+
+        async function incrementApiCall(endpoint = null) {
+            try {
+                await fetch(`${HF_BACKEND_URL}/stats/increment`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: 'apiCall', endpoint: endpoint })
+                });
+                await updateStatsDisplay();
+                console.log('[STATS] API call incremented', endpoint ? `for ${endpoint}` : '');
+            } catch (e) {
+                console.log('[STATS] Failed to increment API call:', e);
+            }
+        }
+
+        async function getStats() {
+            try {
+                const response = await fetch(`${HF_BACKEND_URL}/stats`);
+                if (response.ok) {
+                    return await response.json();
+                }
+            } catch (e) {
+                console.log('[STATS] Could not load stats:', e);
+            }
+            return { apiCalls: 0, visitors: 0 };
+        }
+
+        async function updateStatsDisplay() {
+            const stats = await getStats();
+            const apiCallsEl = document.getElementById('apiCallsCounter');
+            const visitorsEl = document.getElementById('visitorsCounter');
+            
+            if (apiCallsEl) apiCallsEl.textContent = formatNumber(stats.apiCalls || 0);
+            if (visitorsEl) visitorsEl.textContent = formatNumber(stats.visitors || 0);
+        }
+
+        function formatNumber(num) {
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1) + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(1) + 'K';
+            }
+            return num.toString();
+        }
+
+        // ============================================
+        // DIRECT API CALL TRACKING
+        // ============================================
+        
+        // Check if current URL is a direct API call
+        async function trackDirectApiCall() {
+            const path = window.location.pathname;
+            const queryString = window.location.search;
+            
+            // Check if this is an API endpoint path
+            let isApiEndpoint = false;
+            let endpointName = null;
+            
+            Object.values(apiData).forEach(category => {
+                category.endpoints.forEach(ep => {
+                    if (path === ep.path) {
+                        isApiEndpoint = true;
+                        endpointName = ep.name;
+                    }
+                });
+            });
+            
+            // If it's an API endpoint with query params, track it
+            if (isApiEndpoint && queryString) {
+                console.log('[DIRECT API] Detected direct API call to', path);
+                await incrementApiCall(endpointName);
+                return true;
+            }
+            return false;
+        }
+
+        // ============================================
+        // DAILY HEALTH CHECK SYSTEM (12:00 AM SL Time)
+        // ============================================
+        
+        const HEALTH_CHECK_CONFIG = {
+            targetHour: 0,
+            targetMinute: 0,
+            timezone: 'Asia/Colombo',
+            storageKey: 'sri_api_health_status'
+        };
+
+        function getSriLankanTime() {
+            return new Date(new Date().toLocaleString("en-US", { timeZone: HEALTH_CHECK_CONFIG.timezone }));
+        }
+
+        function formatSriLankanTime(date) {
+            return date.toLocaleString('en-US', { 
+                timeZone: HEALTH_CHECK_CONFIG.timezone,
+                month: 'short', 
+                day: 'numeric', 
+                year: 'numeric',
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: true
+            });
+        }
+
+        function getNextCheckTime() {
+            const now = getSriLankanTime();
+            const nextCheck = new Date(now);
+            nextCheck.setHours(HEALTH_CHECK_CONFIG.targetHour, HEALTH_CHECK_CONFIG.targetMinute, 0, 0);
+            
+            // If already past 12:00 AM, set to tomorrow
+            if (now.getHours() > HEALTH_CHECK_CONFIG.targetHour || 
+                (now.getHours() === HEALTH_CHECK_CONFIG.targetHour && now.getMinutes() >= HEALTH_CHECK_CONFIG.targetMinute)) {
+                nextCheck.setDate(nextCheck.getDate() + 1);
+            }
+            
+            return nextCheck;
+        }
+
+        function formatNextCheckTime() {
+            const nextCheck = getNextCheckTime();
+            const now = getSriLankanTime();
+            const isToday = nextCheck.getDate() === now.getDate();
+            
+            const timeStr = nextCheck.toLocaleString('en-US', { 
+                timeZone: HEALTH_CHECK_CONFIG.timezone,
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: true
+            });
+            
+            return isToday ? `Today at ${timeStr}` : `Tomorrow at ${timeStr}`;
+        }
+
+        function loadSavedHealthStatus() {
+            try {
+                const savedData = localStorage.getItem(HEALTH_CHECK_CONFIG.storageKey);
+                if (savedData) {
+                    const parsed = JSON.parse(savedData);
+                    const savedDate = new Date(parsed.timestamp);
+                    const now = getSriLankanTime();
+                    
+                    // Check if saved data is from today
+                    const isToday = savedDate.getDate() === now.getDate() && 
+                                   savedDate.getMonth() === now.getMonth() && 
+                                   savedDate.getFullYear() === now.getFullYear();
+                    
+                    if (isToday && parsed.endpoints) {
+                        // Restore saved statuses
+                        Object.keys(parsed.endpoints).forEach(categoryKey => {
+                            if (apiData[categoryKey]) {
+                                parsed.endpoints[categoryKey].forEach((savedEp, idx) => {
+                                    if (apiData[categoryKey].endpoints[idx]) {
+                                        apiData[categoryKey].endpoints[idx].status = savedEp.status;
+                                    }
+                                });
+                            }
+                        });
+                        
+                        updateHealthCheckPanel('loaded', parsed.summary, formatSriLankanTime(savedDate));
+                        renderSidebar();
+                        console.log('[HEALTH CHECK] Loaded saved status from today:', parsed.summary);
+                        return true;
+                    }
+                }
+            } catch (e) {
+                console.log('[HEALTH CHECK] Could not load saved status:', e);
+            }
+            
+            // No saved data or expired - show as unchecked
+            updateHealthCheckPanel('unchecked', 'Not checked today', null);
+            return false;
+        }
+
+        function saveHealthStatus(summary) {
+            const dataToSave = {
+                timestamp: getSriLankanTime().toISOString(),
+                summary: summary,
+                endpoints: {}
+            };
+            
+            Object.keys(apiData).forEach(categoryKey => {
+                dataToSave.endpoints[categoryKey] = apiData[categoryKey].endpoints.map(ep => ({
+                    status: ep.status
+                }));
+            });
+            
+            localStorage.setItem(HEALTH_CHECK_CONFIG.storageKey, JSON.stringify(dataToSave));
+        }
+
+        function updateHealthCheckPanel(status, message, time) {
+            const statusEl = document.getElementById('healthCheckStatus');
+            const timeEl = document.getElementById('healthCheckTime');
+            const nextEl = document.getElementById('healthCheckNext');
+            
+            let statusClass = 'status-checking';
+            let displayMessage = message;
+            
+            if (status === 'online' || (typeof message === 'string' && message.includes('online'))) {
+                statusClass = 'status-online';
+            } else if (status === 'offline' || (typeof message === 'string' && message.includes('offline'))) {
+                statusClass = 'status-offline';
+            } else if (status === 'loaded') {
+                statusClass = 'status-online';
+            }
+            
+            if (typeof message === 'object') {
+                displayMessage = `${message.online}/${message.total} APIs Online`;
+            }
+            
+            statusEl.innerHTML = `<span class="status-indicator ${statusClass}"></span><span>${displayMessage}</span>`;
+            
+            if (time) {
+                timeEl.textContent = `Last checked: ${time}`;
+            } else if (status === 'unchecked') {
+                timeEl.textContent = 'Last checked: Never';
+            }
+            
+            // Update next check time
+            nextEl.textContent = `Next check: ${formatNextCheckTime()}`;
+        }
+
+        async function performDailyHealthCheck() {
+            console.log('[HEALTH CHECK] Starting daily check at', formatSriLankanTime(getSriLankanTime()));
+            
+            updateHealthCheckPanel('checking', 'Checking APIs...', null);
+            
+            let onlineCount = 0;
+            let totalCount = 0;
+            
+            // Check all endpoints
+            for (const categoryKey of Object.keys(apiData)) {
+                for (let i = 0; i < apiData[categoryKey].endpoints.length; i++) {
+                    totalCount++;
+                    const isOnline = await checkSingleEndpoint(categoryKey, i);
+                    if (isOnline) onlineCount++;
+                }
+            }
+            
+                        const summary = { online: onlineCount, offline: totalCount - onlineCount, total: totalCount };
+            const timeString = formatSriLankanTime(getSriLankanTime());
+            
+            // Save to localStorage
+            saveHealthStatus(summary);
+            
+            // Update UI
+            const overallStatus = onlineCount === totalCount ? 'online' : onlineCount === 0 ? 'offline' : 'checking';
+            updateHealthCheckPanel(overallStatus, summary, timeString);
+            
+            // Refresh displays
+            renderSidebar();
+            if (isShowingAllApis) showAllApis();
+            else if (currentCategory) showApiList(currentCategory);
+            
+            console.log(`[HEALTH CHECK] Completed. ${onlineCount}/${totalCount} online`);
+            return summary;
+        }
+
+        async function checkSingleEndpoint(categoryKey, endpointIndex) {
+            const endpoint = apiData[categoryKey].endpoints[endpointIndex];
+            const baseUrl = getBaseUrl();
+            
+            // Set to checking while testing
+            endpoint.status = 'checking';
+            renderSidebar();
+            
+            try {
+                let testUrl = `${baseUrl}${endpoint.path}`;
+                if (endpoint.params && endpoint.params.length > 0) {
+                    const queryParams = endpoint.params.map(p => 
+                        `${encodeURIComponent(p.name)}=${encodeURIComponent(p.placeholder || 'test')}`
+                    );
+                    testUrl += '?' + queryParams.join('&');
+                }
+                
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                
+                const response = await fetch(testUrl, { 
+                    method: 'GET', 
+                    signal: controller.signal,
+                    headers: { 'Accept': 'application/json' }
+                });
+                
+                clearTimeout(timeoutId);
+                
+                // Check if response contains {"status": true}
+                let isOnline = false;
+                if (response.ok) {
+                    try {
+                        const data = await response.json();
+                        if (data && data.status === true) {
+                            isOnline = true;
+                        }
+                    } catch (e) {
+                        // If JSON parse fails but response was OK, consider online
+                        isOnline = true;
+                    }
+                }
+                
+                endpoint.status = isOnline ? 'online' : 'offline';
+                
+            } catch (error) {
+                endpoint.status = 'offline';
+            }
+            
+            renderSidebar();
+            return endpoint.status === 'online';
+        }
+
+        function startDailyHealthCheck() {
+            // Check immediately if it's past midnight and not checked today
+            const now = getSriLankanTime();
+            const savedData = localStorage.getItem(HEALTH_CHECK_CONFIG.storageKey);
+            
+            let shouldCheckNow = false;
+            if (savedData) {
+                try {
+                    const parsed = JSON.parse(savedData);
+                    const savedDate = new Date(parsed.timestamp);
+                    const savedDay = savedDate.getDate();
+                    const today = now.getDate();
+                    
+                    // If saved date is not today, and it's past 12:00 AM, check now
+                    if (savedDay !== today && now.getHours() >= 0) {
+                        shouldCheckNow = true;
+                    }
+                } catch (e) {
+                    shouldCheckNow = true;
+                }
+            } else {
+                shouldCheckNow = true;
+            }
+            
+            if (shouldCheckNow) {
+                setTimeout(performDailyHealthCheck, 3000); // Wait 3 seconds after page load
+            }
+            
+            // Set up interval to check every minute if it's 12:00 AM
+            setInterval(() => {
+                const currentTime = getSriLankanTime();
+                if (currentTime.getHours() === HEALTH_CHECK_CONFIG.targetHour && 
+                    currentTime.getMinutes() === HEALTH_CHECK_CONFIG.targetMinute) {
+                    
+                    const lastCheck = localStorage.getItem(HEALTH_CHECK_CONFIG.storageKey);
+                    let alreadyCheckedToday = false;
+                    
+                    if (lastCheck) {
+                        try {
+                            const parsed = JSON.parse(lastCheck);
+                            const checkDate = new Date(parsed.timestamp);
+                            if (checkDate.getDate() === currentTime.getDate()) {
+                                alreadyCheckedToday = true;
+                            }
+                        } catch (e) {}
+                    }
+                    
+                    if (!alreadyCheckedToday) {
+                        performDailyHealthCheck();
+                    }
+                }
+            }, 60000); // Check every minute
+            
+            console.log('[HEALTH CHECK] Scheduler started. Daily check at 12:00 AM SL time.');
+        }
+
+        // ============================================
+        // EXISTING FUNCTIONS
+        // ============================================
+
+        function setupHomeSearch() {
+            const homeSearchInput = document.getElementById('homeSearchInput');
+            const homeSearchClear = document.getElementById('homeSearchClear');
+            const hero = document.getElementById('homeSection');
+            const heroButtons = document.getElementById('heroButtons');
+            const searchResultsSection = document.getElementById('searchResultsSection');
+
+            homeSearchInput.addEventListener('input', (e) => {
+                const query = e.target.value.trim();
+                homeSearchClear.classList.toggle('visible', query.length > 0);
+                if (query.length > 0) {
+                    hero.classList.add('compact');
+                    heroButtons.style.display = 'none';
+                    searchResultsSection.classList.add('active');
+                    renderHomeSearchResults(query);
+                } else {
+                    hero.classList.remove('compact');
+                    heroButtons.style.display = 'flex';
+                    searchResultsSection.classList.remove('active');
+                }
+            });
+
+            homeSearchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    clearHomeSearch();
+                    homeSearchInput.blur();
+                }
+            });
+        }
+
+        function renderHomeSearchResults(query) {
+            const grid = document.getElementById('searchResultsGrid');
+            const countEl = document.getElementById('searchResultsCount');
+            const lowerQuery = query.toLowerCase();
+            const results = [];
+            Object.entries(apiData).forEach(([catKey, category]) => {
+                category.endpoints.forEach((endpoint, index) => {
+                    const matchScore = calculateMatchScore(endpoint, category, lowerQuery);
+                    if (matchScore > 0) results.push({ category, categoryKey: catKey, endpoint, index, score: matchScore });
+                });
+            });
+            results.sort((a, b) => b.score - a.score);
+            countEl.textContent = `${results.length} endpoint${results.length !== 1 ? 's' : ''} found`;
+            if (results.length === 0) {
+                grid.innerHTML = `<div class="search-no-results" style="grid-column: 1 / -1;"><svg class="search-no-results-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path><line x1="8" y1="8" x2="14" y2="14"></line><line x1="14" y1="8" x2="8" y2="14"></line></svg><div class="search-no-results-title">No endpoints found</div><div class="search-no-results-text">Try searching for "youtube", "download", "instagram", or "free fire"</div><div class="search-suggestions"><div class="search-suggestions-title">Popular searches</div><div class="search-suggestion-tags"><span class="search-suggestion-tag" onclick="setHomeSearch('youtube')">youtube</span><span class="search-suggestion-tag" onclick="setHomeSearch('tiktok')">tiktok</span><span class="search-suggestion-tag" onclick="setHomeSearch('instagram')">instagram</span><span class="search-suggestion-tag" onclick="setHomeSearch('free fire')">free fire</span></div></div></div>`;
+            } else {
+                grid.innerHTML = results.map(result => `<div class="search-result-card" onclick="showEndpointDetail('${result.categoryKey}', ${result.index})"><div class="search-result-category"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>${result.category.title}</div><div class="search-result-name">${highlightMatch(result.endpoint.name, lowerQuery)}</div><div class="search-result-description">${result.endpoint.description}</div><div class="search-result-meta"><span class="search-result-method">${result.endpoint.method}</span><span class="search-result-path">${result.endpoint.path}</span></div></div>`).join('');
+            }
+        }
+
+        function calculateMatchScore(endpoint, category, query) {
+            let score = 0;
+            const nameLower = endpoint.name.toLowerCase();
+            const descLower = endpoint.description.toLowerCase();
+            const pathLower = endpoint.path.toLowerCase();
+            const catLower = category.title.toLowerCase();
+            if (nameLower === query) score += 100;
+            else if (nameLower.startsWith(query)) score += 80;
+            else if (nameLower.includes(query)) score += 60;
+            if (pathLower.includes(query)) score += 40;
+            if (descLower.includes(query)) score += 20;
+            if (catLower.includes(query)) score += 10;
+            return score;
+        }
+
+        function highlightMatch(text, query) {
+            if (!query) return text;
+            const regex = new RegExp(`(${escapeRegex(query)})`, 'gi');
+            return text.replace(regex, '<mark style="background: #fef3c7; color: #92400e; padding: 2px 4px; border-radius: 4px;">$1</mark>');
+        }
+
+        function escapeRegex(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function setHomeSearch(value) {
+            const input = document.getElementById('homeSearchInput');
+            input.value = value;
+            input.dispatchEvent(new Event('input'));
+            input.focus();
+        }
+
+        function clearHomeSearch() {
+            document.getElementById('homeSearchInput').value = '';
+            document.getElementById('homeSection').classList.remove('compact');
+            document.getElementById('heroButtons').style.display = 'flex';
+            document.getElementById('searchResultsSection').classList.remove('active');
+            document.getElementById('homeSearchClear').classList.remove('visible');
+        }
+
+        function renderSidebar() {
+            const content = document.getElementById('sidebarContent');
+            content.innerHTML = '';
+            let totalResults = 0;
+            Object.keys(apiData).forEach(categoryKey => {
+                const category = apiData[categoryKey];
+                const filteredEndpoints = category.endpoints.filter(endpoint => {
+                    if (!sidebarSearchQuery) return true;
+                    const query = sidebarSearchQuery.toLowerCase();
+                    return endpoint.name.toLowerCase().includes(query) || endpoint.description.toLowerCase().includes(query) || endpoint.path.toLowerCase().includes(query) || category.title.toLowerCase().includes(query);
+                });
+                if (filteredEndpoints.length === 0) return;
+                totalResults += filteredEndpoints.length;
+                const section = document.createElement('div');
+                section.className = 'sidebar-section';
+                const title = document.createElement('div');
+                title.className = 'sidebar-section-title';
+                title.innerHTML = `<span>${category.title}</span><span class="sidebar-section-count">${filteredEndpoints.length}</span>`;
+                section.appendChild(title);
+                const menu = document.createElement('ul');
+                menu.className = 'sidebar-menu';
+                filteredEndpoints.forEach(endpoint => {
+                    const originalIndex = category.endpoints.indexOf(endpoint);
+                    const li = document.createElement('li');
+                    li.className = 'sidebar-item';
+                    const link = document.createElement('a');
+                    link.className = 'sidebar-link';
+                    if (sidebarSearchQuery && (endpoint.name.toLowerCase().includes(sidebarSearchQuery.toLowerCase()) || endpoint.path.toLowerCase().includes(sidebarSearchQuery.toLowerCase()))) link.classList.add('highlight');
+                    if (currentEndpoint && currentEndpoint.path === endpoint.path) link.classList.add('active');
+                    link.onclick = () => { showEndpointDetail(categoryKey, originalIndex); if (window.innerWidth < 1024) toggleSidebar(); };
+                    let statusClass = endpoint.status === 'online' ? 'status-online' : endpoint.status === 'offline' ? 'status-offline' : 'status-checking';
+                    link.innerHTML = `<span class="status-indicator ${statusClass}"></span><svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg><span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${endpoint.name}</span><span class="endpoint-badge">${endpoint.method}</span>`;
+                    li.appendChild(link);
+                    menu.appendChild(li);
+                });
+                section.appendChild(menu);
+                content.appendChild(section);
+            });
+            if (totalResults === 0 && sidebarSearchQuery) content.innerHTML = `<div class="no-results"><svg class="no-results-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path><line x1="8" y1="8" x2="14" y2="14"></line><line x1="14" y1="8" x2="8" y2="14"></line></svg><div>No endpoints found</div><div style="font-size: 12px; margin-top: 8px; opacity: 0.7;">Try a different search term</div></div>`;
+        }
+
+        const sidebarSearchInput = document.getElementById('sidebarSearchInput');
+        const sidebarSearchClear = document.getElementById('sidebarSearchClear');
+        sidebarSearchInput.addEventListener('input', (e) => {
+            sidebarSearchQuery = e.target.value.trim();
+            sidebarSearchClear.classList.toggle('visible', sidebarSearchQuery.length > 0);
+            renderSidebar();
+        });
+
+        function clearSidebarSearch() {
+            sidebarSearchQuery = '';
+            sidebarSearchInput.value = '';
+            sidebarSearchClear.classList.remove('visible');
+            renderSidebar();
+        }
+
+        function setupKeyboardShortcuts() {
+            document.addEventListener('keydown', (e) => {
+                if (e.key === '/' && !e.metaKey && !e.ctrlKey && e.target.tagName !== 'INPUT') {
+                    e.preventDefault();
+                    const sidebar = document.getElementById('sidebar');
+                    if (sidebar.classList.contains('active') || window.innerWidth >= 1024) sidebarSearchInput.focus();
+                    else document.getElementById('homeSearchInput').focus();
+                }
+                if (e.key === 'Escape') {
+                    if (document.getElementById('homeSearchInput').value) { clearHomeSearch(); return; }
+                    const sidebar = document.getElementById('sidebar');
+                    if (sidebar.classList.contains('active') && window.innerWidth < 1024) toggleSidebar();
+                }
+                if (e.key === 'm' && !e.metaKey && !e.ctrlKey && e.target.tagName !== 'INPUT') {
+                    e.preventDefault();
+                    toggleSidebar();
+                }
+            });
+        }
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('active');
+            document.querySelector('.sidebar-overlay').classList.toggle('active');
+        }
+
+        function closeSidebar() {
+            document.getElementById('sidebar').classList.remove('active');
+            document.querySelector('.sidebar-overlay').classList.remove('active');
+        }
+
+        function showHome() {
+            hideAllSections();
+            document.getElementById('homeSection').style.display = 'flex';
+            document.getElementById('searchResultsSection').classList.remove('active');
+            currentCategory = null;
+            currentEndpoint = null;
+            isShowingAllApis = false;
+            document.getElementById('homeSection').classList.remove('compact');
+            document.getElementById('heroButtons').style.display = 'flex';
+            clearHomeSearch();
+            renderSidebar();
+            closeSidebar();
+            window.scrollTo(0, 0);
+        }
+
+        function showAllApis() {
+            isShowingAllApis = true;
+            currentCategory = null;
+            currentEndpoint = null;
+            hideAllSections();
+            document.getElementById('apiListSection').classList.add('active');
+            document.getElementById('listTitle').textContent = 'All APIs';
+            const list = document.getElementById('endpointsList');
+            list.innerHTML = '';
+            Object.keys(apiData).forEach(categoryKey => {
+                const catData = apiData[categoryKey];
+                const categoryHeader = document.createElement('div');
+                categoryHeader.className = 'category-header';
+                categoryHeader.innerHTML = `<span class="category-title">${catData.title}</span><span class="category-count">${catData.endpoints.length} endpoints</span>`;
+                list.appendChild(categoryHeader);
+                catData.endpoints.forEach((endpoint, index) => {
+                    const card = document.createElement('div');
+                    card.className = 'endpoint-card';
+                    card.onclick = () => showEndpointDetail(categoryKey, index);
+                    let statusClass = endpoint.status === 'online' ? 'status-online' : endpoint.status === 'offline' ? 'status-offline' : 'status-checking';
+                    card.innerHTML = `<div class="endpoint-header"><div style="flex: 1; min-width: 0;"><div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;"><span class="endpoint-method">${endpoint.method}</span><span class="status-indicator ${statusClass}"></span></div><h3 class="endpoint-name">${endpoint.name}</h3><p class="endpoint-description">${endpoint.description}</p></div><div class="endpoint-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div></div>`;
+                    list.appendChild(card);
+                });
+            });
+            renderSidebar();
+            window.scrollTo(0, 0);
+        }
+
+        function showApiList(category) {
+            isShowingAllApis = false;
+            currentCategory = category;
+            currentEndpoint = null;
+            hideAllSections();
+            document.getElementById('apiListSection').classList.add('active');
+            document.getElementById('listTitle').textContent = apiData[category].title;
+            const list = document.getElementById('endpointsList');
+            list.innerHTML = '';
+            apiData[category].endpoints.forEach((endpoint, index) => {
+                const card = document.createElement('div');
+                card.className = 'endpoint-card';
+                card.onclick = () => showEndpointDetail(category, index);
+                let statusClass = endpoint.status === 'online' ? 'status-online' : endpoint.status === 'offline' ? 'status-offline' : 'status-checking';
+                card.innerHTML = `<div class="endpoint-header"><div style="flex: 1; min-width: 0;"><div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;"><span class="endpoint-method">${endpoint.method}</span><span class="status-indicator ${statusClass}"></span></div><h3 class="endpoint-name">${endpoint.name}</h3><p class="endpoint-description">${endpoint.description}</p></div><div class="endpoint-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div></div>`;
+                list.appendChild(card);
+            });
+            renderSidebar();
+            window.scrollTo(0, 0);
+        }
+
+        function showEndpointDetail(category, index) {
+            currentCategory = category;
+            currentEndpoint = apiData[category].endpoints[index];
+            currentResponse = null;
+            isShowingAllApis = false;
+            hideAllSections();
+            document.getElementById('endpointDetail').classList.add('active');
+            document.getElementById('detailTitle').textContent = currentEndpoint.name;
+            document.getElementById('detailDescription').textContent = currentEndpoint.description;
+            updateEndpointUrl();
+            const paramsBody = document.getElementById('paramsTableBody');
+            paramsBody.innerHTML = '';
+            if (currentEndpoint.params && currentEndpoint.params.length > 0) {
+                document.getElementById('paramsSection').style.display = 'block';
+                currentEndpoint.params.forEach(param => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `<td><div class="param-name">${param.name}</div>${param.required ? '<span class="param-required">required</span>' : ''}</td><td><span class="param-type">${param.type}</span></td><td>${param.description}</td>`;
+                    paramsBody.appendChild(row);
+                });
+            } else document.getElementById('paramsSection').style.display = 'none';
+            renderTestInputs();
+            document.getElementById('responseSection').classList.remove('active');
+            updateCodeExamples();
+            renderSidebar();
+            window.scrollTo(0, 0);
+        }
+
+        function goBackFromDetail() {
+            isShowingAllApis ? showAllApis() : currentCategory ? showApiList(currentCategory) : showHome();
+        }
+
+        function updateEndpointUrl() {
+            const baseUrl = getBaseUrl();
+            document.getElementById('endpointUrl').textContent = `${baseUrl}${currentEndpoint.path}`;
+        }
+
+        function buildRequestUrl() {
+            const baseUrl = getBaseUrl();
+            let url = `${baseUrl}${currentEndpoint.path}`;
+            const params = currentEndpoint.params || [];
+            if (params.length > 0) {
+                const queryParams = [];
+                params.forEach(param => {
+                    const input = document.getElementById(`input-${param.name}`);
+                    const value = input ? input.value : '';
+                    if (value) queryParams.push(`${encodeURIComponent(param.name)}=${encodeURIComponent(value)}`);
+                });
+                if (queryParams.length > 0) url += '?' + queryParams.join('&');
+            }
+            return url;
+        }
+
+        function renderTestInputs() {
+            const container = document.getElementById('testInputs');
+            container.innerHTML = '';
+            const params = currentEndpoint.params || [];
+            if (params.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-secondary); font-size: 14px;">No parameters required for this endpoint.</p>';
+                return;
+            }
+            params.forEach(param => {
+                const group = document.createElement('div');
+                group.className = 'input-group';
+                group.innerHTML = `<label class="input-label">${param.name}${param.required ? '<span style="color: #ff4444;">*</span>' : ''}</label><input type="text" id="input-${param.name}" class="test-input" placeholder="${param.placeholder || ''}" value="${param.placeholder || ''}" oninput="updateEndpointUrl(); updateCodeExamples();">`;
+                container.appendChild(group);
+            });
+        }
+
+        async function testEndpoint() {
+            const responseSection = document.getElementById('responseSection');
+            const responseStatus = document.getElementById('responseStatus');
+            const responseContent = document.getElementById('responseContent');
+            const responseTime = document.getElementById('responseTime');
+            const testBtnText = document.getElementById('testBtnText');
+            responseSection.classList.add('active');
+            responseStatus.className = 'response-status status-loading';
+            responseStatus.innerHTML = '<span class="loading"></span> Sending Request...';
+            responseContent.textContent = 'Waiting for response...';
+            responseTime.textContent = '';
+            testBtnText.textContent = 'Sending...';
+            const startTime = performance.now();
+            try {
+                const url = buildRequestUrl();
+                const response = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
+                const endTime = performance.now();
+                const duration = (endTime - startTime).toFixed(0);
+                const data = await response.json();
+                currentResponse = data;
+                if (response.ok && data.status !== false) {
+                    responseStatus.className = 'response-status status-success';
+                    responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Success (${response.status})`;
+                } else {
+                    responseStatus.className = 'response-status status-error';
+                    responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Error (${response.status})`;
+                }
+                responseTime.textContent = `${duration}ms`;
+                responseContent.innerHTML = syntaxHighlight(JSON.stringify(data, null, 2));
+                
+                // Increment API call counter on successful test
+                await incrementApiCall(currentEndpoint.name);
+                
+            } catch (error) {
+                responseStatus.className = 'response-status status-error';
+                responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Network Error`;
+                responseContent.textContent = `Error: ${error.message}\n\nMake sure the API server is running and accessible.`;
+            } finally {
+                testBtnText.textContent = 'Send Request';
+            }
+        }
+
+        function syntaxHighlight(json) {
+            return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                let cls = 'json-number';
+                if (/^"/.test(match)) {
+                    if (/:$/.test(match)) { cls = 'json-key'; match = match.slice(0, -1) + '</span>:'; }
+                    else cls = 'json-string';
+                } else if (/true|false/.test(match)) cls = 'json-boolean';
+                else if (/null/.test(match)) cls = 'json-null';
+                return '<span class="' + cls + '">' + match + '</span>';
+            });
+        }
+
+        function copyResponse() {
+            if (!currentResponse) return;
+            navigator.clipboard.writeText(JSON.stringify(currentResponse, null, 2)).then(() => showToast('Response copied!'));
+        }
+
+        function downloadResponse() {
+            if (!currentResponse) return;
+            const json = JSON.stringify(currentResponse, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `response-${currentEndpoint.path.replace(/\//g, '-')}-${Date.now()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('Response downloaded!');
+        }
+
+        function openInBrowser() {
+            window.open(buildRequestUrl(), '_blank');
+        }
+
+        function updateCodeExamples() {
+            const url = buildRequestUrl();
+            const examples = {
+                curl: `curl -X GET "${url}" \\\n  -H "Accept: application/json"`,
+                node: `const axios = require('axios');\n\nconst url = '${url}';\n\naxios.get(url)\n  .then(response => {\n    console.log(response.data);\n  })\n  .catch(error => {\n    console.error(error);\n  });`,
+                python: `import requests\n\nurl = "${url}"\n\nresponse = requests.get(url)\ndata = response.json()\n\nprint(data)`,
+                php: `<?php\n\n$url = '${url}';\n\n$ch = curl_init($url);\ncurl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n$response = curl_exec($ch);\ncurl_close($ch);\n\n$data = json_decode($response, true);\nprint_r($data);`
+            };
+            const code = examples[currentTab] || examples.curl;
+            document.getElementById('codeContent').innerHTML = code.split('\n').map((line, i) => `<div class="code-line"><span class="line-number">${i + 1}</span><span>${escapeHtml(line)}</span></div>`).join('');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.code-tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            updateCodeExamples();
+        }
+
+        function hideAllSections() {
+            document.getElementById('homeSection').style.display = 'none';
+            document.getElementById('searchResultsSection').classList.remove('active');
+            document.getElementById('apiListSection').classList.remove('active');
+            document.getElementById('endpointDetail').classList.remove('active');
+        }
+
+        function copyToClipboard(elementId) {
+            navigator.clipboard.writeText(document.getElementById(elementId).textContent).then(() => showToast('Copied to clipboard!'));
+        }
+
+        function copyCode() {
+            const code = Array.from(document.querySelectorAll('#codeContent .code-line span:last-child')).map(line => line.textContent).join('\n');
+            navigator.clipboard.writeText(code).then(() => showToast('Code copied!'));
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // ============================================
+        // INITIALIZATION
+        // ============================================
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            renderSidebar();
+            setupKeyboardShortcuts();
+            setupHomeSearch();
+            loadSavedHealthStatus();
+            startDailyHealthCheck();
+            initStats(); // Initialize stats tracking
+            trackDirectApiCall(); // Check if this is a direct API call
+        });
+    </script>
+</body>
+</html>
+
