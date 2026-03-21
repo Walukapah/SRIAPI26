@@ -1,4 +1,4 @@
-// server.js - Updated with Fixed Stats Tracking & Consistent Endpoint Names
+// server.js - Koyeb Optimized with Fixed Stats Tracking & Consistent Endpoint Names
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -355,23 +355,15 @@ app.use(['/download', '/search'], async (req, res, next) => {
 });
 
 // ============================================
-// HEALTH CHECK
+// HEALTH CHECK - Koyeb Optimized
 // ============================================
 
 app.get('/health', (req, res) => {
-  const today = getTodayString();
-  const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
-  
+  // Simple, fast response - no heavy operations
   res.status(200).json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    version: '3.0.0',
-    githubBackup: githubEnabled,
-    stats: {
-        apiCalls: stats.apiCalls,
-        visitors: todayVisitors
-    }
+    uptime: process.uptime()
   });
 });
 
@@ -552,7 +544,7 @@ app.use((err, req, res, next) => {
 });
 
 // ============================================
-// START SERVER
+// START SERVER - Koyeb Optimized
 // ============================================
 
 const PORT = process.env.PORT || 3000;
@@ -565,6 +557,7 @@ async function startServer() {
     
     startAutoSave();
     
+    // IMPORTANT: Bind to 0.0.0.0 for Koyeb
     app.listen(PORT, '0.0.0.0', () => {
         const today = getTodayString();
         const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
@@ -573,6 +566,7 @@ async function startServer() {
 ╔══════════════════════════════════════════╗
 ║           SRI API V3.0                   ║
 ║       Server running on port ${PORT}        ║
+║   URL: http://0.0.0.0:${PORT}             ║
 ║                                          ║
 ║  Stats: ${stats.apiCalls} calls, ${todayVisitors} visitors today    ║
 ║  GitHub Backup: ${githubEnabled ? 'ENABLED ✅' : 'DISABLED ❌'}      ║
