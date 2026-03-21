@@ -80,48 +80,18 @@ function getTodayString() {
     return new Date().toISOString().split('T')[0];
 }
 
-// Get client IP address properly (handles proxies)
-function getClientIP(req) {
-    // Check various headers for real client IP (when behind proxy)
-    const forwarded = req.headers['x-forwarded-for'];
-    const realIp = req.headers['x-real-ip'];
-    const cfConnectingIp = req.headers['cf-connecting-ip']; // Cloudflare
-
-    let clientIp = null;
-
-    if (forwarded) {
-        // X-Forwarded-For can be "client, proxy1, proxy2" - take the first one (client)
-        clientIp = forwarded.split(',')[0].trim();
-    } else if (realIp) {
-        clientIp = realIp;
-    } else if (cfConnectingIp) {
-        clientIp = cfConnectingIp;
-    } else if (req.ip) {
-        clientIp = req.ip;
-    } else {
-        clientIp = req.connection?.remoteAddress || 'unknown';
-    }
-
-    // Remove IPv6 prefix if present (::ffff:192.168.1.1 -> 192.168.1.1)
-    if (clientIp && clientIp.startsWith('::ffff:')) {
-        clientIp = clientIp.substring(7);
-    }
-
-    return clientIp || 'unknown';
-}
-
 // Test GitHub connection
 async function testGitHubConnection() {
     if (!octokit) {
         console.log('[GITHUB] No octokit instance, skipping connection test');
         return false;
     }
-
+    
     try {
         console.log('[GITHUB] Testing connection to GitHub...');
         const { data: user } = await octokit.users.getAuthenticated();
         console.log(`[GITHUB] Authenticated as: ${user.login}`);
-
+        
         // Test repo access
         try {
             const { data: repo } = await octokit.repos.get({
@@ -173,16 +143,16 @@ async function loadStatsFromGitHub() {
 
         const content = Buffer.from(data.content, 'base64').toString('utf8');
         const parsedStats = JSON.parse(content);
-
+        
         // Convert visitors object back from saved format
         stats.apiCalls = parsedStats.apiCalls || 0;
         stats.visitors = parsedStats.visitors || {};  // Now it's an object with date keys
         stats.endpointCalls = parsedStats.endpointCalls || {};
         stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
-
+        
         // Also save locally as backup
         saveStatsToLocal();
-
+        
         const today = getTodayString();
         const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
         console.log(`[STATS] Loaded from GitHub: ${stats.apiCalls} calls, ${todayVisitors} visitors today`);
@@ -282,12 +252,12 @@ function loadStatsFromLocal() {
         if (fs.existsSync(`./${STATS_FILE}`)) {
             const content = fs.readFileSync(`./${STATS_FILE}`, 'utf8');
             const parsedStats = JSON.parse(content);
-
+            
             stats.apiCalls = parsedStats.apiCalls || 0;
             stats.visitors = parsedStats.visitors || {};  // Now it's an object
             stats.endpointCalls = parsedStats.endpointCalls || {};
             stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
-
+            
             const today = getTodayString();
             const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
             console.log(`[STATS] Loaded from local: ${stats.apiCalls} calls, ${todayVisitors} visitors today`);
@@ -304,13 +274,13 @@ function startAutoSave() {
     setInterval(async () => {
         // Always save locally
         saveStatsToLocal();
-
+        
         // Try to save to GitHub if enabled
         if (githubEnabled) {
             await saveStatsToGitHub();
         }
     }, 60000); // Every 1 minute
-
+    
     console.log('[STATS] Auto-save started (every 1 minute)');
 }
 
@@ -327,48 +297,70 @@ app.use('/download', limiter);
 app.use('/search', limiter);
 
 // ============================================
-// API TRACKING MIDDLEWARE - Track ALL API calls
+// API CALL TRACKING MIDDLEWARE
 // ============================================
+// This tracks ALL API calls including direct browser/tool access
 
-// Map paths to endpoint names for tracking
-const endpointNameMap = {
-    '/download/youtubedl': 'YouTube Downloader',
-    '/download/youtubedl2': 'YouTube Downloader V2',
-    '/download/tiktokdl': 'TikTok Downloader',
-    '/download/instagramdl': 'Instagram Downloader',
-    '/download/textphoto': 'Text to Photo',
-    '/search/freefire': 'Free Fire Player Info'
-};
+// Helper function to get endpoint name from path
+function getEndpointName(path) {
+    if (path.includes('youtubedl2')) return 'YouTube Downloader V2';
+    if (path.includes('youtubedl')) return 'YouTube Downloader';
+    if (path.includes('tiktokdl')) return 'TikTok Downloader';
+    if (path.includes('instagramdl')) return 'Instagram Downloader';
+    if (path.includes('textphoto')) return 'Text to Photo';
+    if (path.includes('freefire')) return 'Free Fire Player Info';
+    return path;
+}
 
-// Middleware to track ALL API calls (both from web UI and direct links)
-function apiTrackingMiddleware(req, res, next) {
+// Middleware to track all API calls to download and search endpoints
+app.use(['/download', '/search'], async (req, res, next) => {
     const path = req.path;
 
-    // Check if this is an API endpoint
-    const endpointName = endpointNameMap[path];
-    if (endpointName) {
-        // Check if there are query parameters (actual API call, not just page visit)
-        const hasQueryParams = Object.keys(req.query).length > 0;
+    // Check if this is a valid API endpoint
+    const validEndpoints = [
+        '/youtubedl', '/youtubedl2', '/tiktokdl', 
+        '/instagramdl', '/textphoto', '/freefire'
+    ];
 
-        if (hasQueryParams) {
-            // Increment API call counter
-            stats.apiCalls++;
+    const isValidEndpoint = validEndpoints.some(endpoint => path.includes(endpoint));
 
-            // Track endpoint-specific calls
-            stats.endpointCalls[endpointName] = (stats.endpointCalls[endpointName] || 0) + 1;
+    if (isValidEndpoint) {
+        // Increment API call counter
+        stats.apiCalls++;
 
-            // Update timestamp
-            stats.lastUpdated = new Date().toISOString();
+        // Track endpoint-specific stats
+        const endpointKey = path.split('/').pop() || path;
+        stats.endpointCalls[endpointKey] = (stats.endpointCalls[endpointKey] || 0) + 1;
 
-            console.log(`[TRACKING] API Call: ${endpointName} | Total: ${stats.apiCalls} | Endpoint: ${stats.endpointCalls[endpointName]}`);
+        stats.lastUpdated = new Date().toISOString();
+
+        // Track visitor (daily unique based on IP)
+        const clientIp = req.headers['x-forwarded-for'] || req.ip || 'unknown';
+        const today = getTodayString();
+
+        if (!stats.visitors[today]) {
+            stats.visitors[today] = {};
+        }
+
+        const visitorHash = crypto.createHash('sha256').update(clientIp).digest('hex').substring(0, 16);
+        const isNewVisitor = !stats.visitors[today][visitorHash];
+        stats.visitors[today][visitorHash] = new Date().toISOString();
+
+        // Log the API call
+        const endpointName = getEndpointName(path);
+        const queryParams = Object.keys(req.query).length > 0 ? `?${Object.keys(req.query).join('&')}` : '';
+        console.log(`[API CALL] ➜ ${endpointName} | Total Calls: ${stats.apiCalls} | IP: ${clientIp.substring(0, 15)}... | New Visitor: ${isNewVisitor ? 'Yes' : 'No'}`);
+
+        // Save stats immediately (don't wait for auto-save)
+        saveStatsToLocal();
+        if (githubEnabled) {
+            saveStatsToGitHub().catch(err => console.log('[TRACKING] GitHub save skipped'));
         }
     }
 
     next();
-}
+});
 
-// Apply tracking middleware to all routes
-app.use(apiTrackingMiddleware);
 
 // ============================================
 // HEALTH CHECK ENDPOINT
@@ -376,7 +368,7 @@ app.use(apiTrackingMiddleware);
 app.get('/health', (req, res) => {
   const today = getTodayString();
   const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
-
+  
   res.status(200).json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -398,13 +390,13 @@ app.get('/health', (req, res) => {
 app.get('/stats', (req, res) => {
   const today = getTodayString();
   const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
-
+  
   // Calculate total unique visitors across all days
   let totalUniqueVisitors = 0;
   Object.values(stats.visitors).forEach(dayVisitors => {
     totalUniqueVisitors += Object.keys(dayVisitors).length;
   });
-
+  
   res.json({
     apiCalls: stats.apiCalls,
     visitors: todayVisitors,  // Today's unique visitors
@@ -416,38 +408,31 @@ app.get('/stats', (req, res) => {
   });
 });
 
-// Increment stats - FIXED VERSION
+// Increment stats
 app.post('/stats/increment', (req, res) => {
   const { type, endpoint, visitorId } = req.body;
   const today = getTodayString();
-
+  
   if (type === 'visitor') {
-    // Get client IP using our proper IP detection function
-    const clientIp = visitorId || getClientIP(req);
-
-    console.log(`[VISITOR] Tracking visitor. IP: ${clientIp ? clientIp.substring(0, 10) + '...' : 'unknown'}`);
-
+    // Get visitor identifier (IP or provided visitorId from frontend)
+    const clientIp = req.headers['x-forwarded-for'] || req.ip || 'unknown';
+    // Use provided visitorId (IP from frontend) if available, otherwise use server-detected IP
+    const vid = visitorId || clientIp;
+    
     // Create hash of visitor ID for privacy
-    const visitorHash = crypto.createHash('sha256').update(clientIp).digest('hex').substring(0, 16);
-
+    const visitorHash = crypto.createHash('sha256').update(vid).digest('hex').substring(0, 16);
+    
     // Initialize today's visitors if not exists
     if (!stats.visitors[today]) {
         stats.visitors[today] = {};
     }
-
+    
     // Check if this visitor already visited today
     const isNewVisitor = !stats.visitors[today][visitorHash];
-
-    if (isNewVisitor) {
-        // Mark visitor as visited today (store timestamp)
-        stats.visitors[today][visitorHash] = new Date().toISOString();
-        console.log(`[VISITOR] ✅ New visitor recorded. Hash: ${visitorHash}`);
-    } else {
-        // Update timestamp for existing visitor
-        stats.visitors[today][visitorHash] = new Date().toISOString();
-        console.log(`[VISITOR] ℹ️ Returning visitor. Hash: ${visitorHash}`);
-    }
-
+    
+    // Mark visitor as visited today (store timestamp)
+    stats.visitors[today][visitorHash] = new Date().toISOString();
+    
     // Clean up old visitor data (keep only last 30 days)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -456,24 +441,15 @@ app.post('/stats/increment', (req, res) => {
             delete stats.visitors[date];
         }
     });
-
+    
     const todayCount = Object.keys(stats.visitors[today]).length;
-
-    // Calculate total unique visitors
-    let totalUniqueVisitors = 0;
-    Object.values(stats.visitors).forEach(dayVisitors => {
-        totalUniqueVisitors += Object.keys(dayVisitors).length;
-    });
-
+    
     res.json({ 
         success: true, 
         isNewVisitor,
-        todayVisitors: todayCount,
-        totalVisitors: totalUniqueVisitors,
         stats: {
             apiCalls: stats.apiCalls,
-            visitors: todayCount,
-            totalVisitors: totalUniqueVisitors
+            visitors: todayCount
         }
     });
   } else if (type === 'apiCall') {
@@ -481,9 +457,9 @@ app.post('/stats/increment', (req, res) => {
     if (endpoint) {
       stats.endpointCalls[endpoint] = (stats.endpointCalls[endpoint] || 0) + 1;
     }
-
+    
     const todayCount = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
-
+    
     res.json({ 
         success: true, 
         stats: {
@@ -691,22 +667,22 @@ const PORT = process.env.PORT || 3000;
 
 async function startServer() {
     console.log('[STARTUP] Starting SRI API V3.0...');
-
+    
     // First try to load from GitHub
     const githubLoaded = await loadStatsFromGitHub();
-
+    
     // If GitHub failed, try local
     if (!githubLoaded) {
         loadStatsFromLocal();
     }
-
+    
     // Start auto-save
     startAutoSave();
-
+    
     app.listen(PORT, '0.0.0.0', () => {
         const today = getTodayString();
         const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
-
+        
         console.log(`
 ╔══════════════════════════════════════════╗
 ║           SRI API V3.0                   ║
