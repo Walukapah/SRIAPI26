@@ -692,7 +692,7 @@
             const visitorsEl = document.getElementById('visitorsCounter');
             
             if (apiCallsEl) apiCallsEl.textContent = formatNumber(stats.apiCalls || 0);
-            if (visitorsEl) visitorsEl.textContent = formatNumber(stats.visitors || 0);
+            if (visitorsEl) visitorsEl.textContent = formatNumber(stats.totalVisitors || 0);
         }
 
         function formatNumber(num) {
