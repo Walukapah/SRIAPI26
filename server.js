@@ -1,4 +1,4 @@
-// server.js - Updated with GitHub Integration for Stats Persistence
+// server.js - Updated with Fixed Stats Tracking & Consistent Endpoint Names
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -31,7 +31,6 @@ app.use(express.json());
 // GITHUB CONFIGURATION
 // ============================================
 
-// Check if GitHub token is available
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const GITHUB_REPO_OWNER = process.env.GITHUB_REPO_OWNER || 'Walukapah';
 const GITHUB_REPO_NAME = process.env.GITHUB_REPO_NAME || 'SRI-API-STORE';
@@ -47,9 +46,7 @@ let githubEnabled = false;
 
 if (GITHUB_TOKEN && GITHUB_TOKEN.length > 10 && !GITHUB_TOKEN.includes('your')) {
     try {
-        octokit = new Octokit({
-            auth: GITHUB_TOKEN
-        });
+        octokit = new Octokit({ auth: GITHUB_TOKEN });
         githubEnabled = true;
         console.log('[GITHUB] Octokit initialized successfully');
     } catch (error) {
@@ -58,77 +55,101 @@ if (GITHUB_TOKEN && GITHUB_TOKEN.length > 10 && !GITHUB_TOKEN.includes('your')) 
     }
 } else {
     console.warn('[GITHUB] GITHUB_TOKEN not set, too short, or contains placeholder text');
-    console.warn('[GITHUB] Token value preview:', GITHUB_TOKEN ? GITHUB_TOKEN.substring(0, 10) + '...' : 'undefined');
 }
 
-const STATS_FILE = 'api_stats.json';
+const STATS_FILE = 'api_stats1.json';
 
 // ============================================
-// STATS SYSTEM - IP Based Daily Unique Visitors
+// ENDPOINT NAME MAPPING - Consistent naming
 // ============================================
 
-// In-memory stats (will be synced with GitHub and local file)
+const ENDPOINT_NAME_MAP = {
+    'youtubedl': 'YouTube Downloader',
+    'youtubedl2': 'YouTube Downloader V2',
+    'tiktokdl': 'TikTok Downloader',
+    'instagramdl': 'Instagram Downloader',
+    'textphoto': 'Text to Photo',
+    'freefire': 'Free Fire Player Info'
+};
+
+function getEndpointName(path) {
+    const parts = path.split('/').filter(p => p);
+    const lastPart = parts[parts.length - 1] || path;
+    return ENDPOINT_NAME_MAP[lastPart] || lastPart
+        .replace(/([A-Z])/g, ' $1')
+        .replace(/^./, str => str.toUpperCase())
+        .replace(/dl$/i, ' Downloader');
+}
+
+// ============================================
+// STATS SYSTEM
+// ============================================
+
 let stats = {
     apiCalls: 0,
-    visitors: {},  // Format: { "2024-03-20": { "hashed_ip_1": timestamp, "hashed_ip_2": timestamp } }
+    visitors: {},
     endpointCalls: {},
     lastUpdated: new Date().toISOString()
 };
 
-// Helper function to get today's date string (YYYY-MM-DD)
+// Track recently counted requests to prevent double counting
+const recentRequests = new Map();
+const REQUEST_CACHE_TIMEOUT = 5000; // 5 seconds
+
 function getTodayString() {
     return new Date().toISOString().split('T')[0];
 }
 
-// Test GitHub connection
-async function testGitHubConnection() {
-    if (!octokit) {
-        console.log('[GITHUB] No octokit instance, skipping connection test');
-        return false;
+function getRequestFingerprint(clientIp, endpoint) {
+    const minute = Math.floor(Date.now() / 1000 / 60);
+    const hash = crypto.createHash('sha256')
+        .update(`${clientIp}:${endpoint}:${minute}`)
+        .digest('hex')
+        .substring(0, 16);
+    return hash;
+}
+
+function wasRecentlyCounted(fingerprint) {
+    const now = Date.now();
+    for (const [key, timestamp] of recentRequests.entries()) {
+        if (now - timestamp > REQUEST_CACHE_TIMEOUT) {
+            recentRequests.delete(key);
+        }
     }
-    
+    if (recentRequests.has(fingerprint)) return true;
+    recentRequests.set(fingerprint, now);
+    return false;
+}
+
+// ============================================
+// GITHUB FUNCTIONS
+// ============================================
+
+async function testGitHubConnection() {
+    if (!octokit) return false;
     try {
-        console.log('[GITHUB] Testing connection to GitHub...');
         const { data: user } = await octokit.users.getAuthenticated();
         console.log(`[GITHUB] Authenticated as: ${user.login}`);
-        
-        // Test repo access
-        try {
-            const { data: repo } = await octokit.repos.get({
-                owner: GITHUB_REPO_OWNER,
-                repo: GITHUB_REPO_NAME
-            });
-            console.log(`[GITHUB] Repository access confirmed: ${repo.full_name}`);
-            return true;
-        } catch (repoError) {
-            console.error(`[GITHUB] Cannot access repository ${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}:`, repoError.message);
-            if (repoError.status === 404) {
-                console.error('[GITHUB] Repository not found. Please create it or check the name.');
-            } else if (repoError.status === 403) {
-                console.error('[GITHUB] No permission to access repository. Check token scopes.');
-            }
-            return false;
-        }
+        const { data: repo } = await octokit.repos.get({
+            owner: GITHUB_REPO_OWNER,
+            repo: GITHUB_REPO_NAME
+        });
+        console.log(`[GITHUB] Repository access confirmed: ${repo.full_name}`);
+        return true;
     } catch (error) {
-        console.error('[GITHUB] Authentication test failed:', error.message);
-        if (error.status === 401) {
-            console.error('[GITHUB] Token is invalid or expired');
-        }
+        console.error('[GITHUB] Connection test failed:', error.message);
         return false;
     }
 }
 
-// Load stats from GitHub on startup
 async function loadStatsFromGitHub() {
     if (!githubEnabled || !octokit) {
         console.log('[STATS] GitHub not enabled, skipping GitHub load');
         return false;
     }
 
-    // First test connection
     const connected = await testGitHubConnection();
     if (!connected) {
-        console.log('[GITHUB] Connection test failed, disabling GitHub backup');
         githubEnabled = false;
         return false;
     }
@@ -144,45 +165,49 @@ async function loadStatsFromGitHub() {
         const content = Buffer.from(data.content, 'base64').toString('utf8');
         const parsedStats = JSON.parse(content);
         
-        // Convert visitors object back from saved format
+        // Merge with validation
         stats.apiCalls = parsedStats.apiCalls || 0;
-        stats.visitors = parsedStats.visitors || {};  // Now it's an object with date keys
+        stats.visitors = parsedStats.visitors || {};
         stats.endpointCalls = parsedStats.endpointCalls || {};
         stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
         
-        // Also save locally as backup
+        // Clean up old endpoint names if any
+        const cleanedEndpoints = {};
+        Object.keys(stats.endpointCalls).forEach(key => {
+            // Check if this is an old short name
+            const cleanKey = ENDPOINT_NAME_MAP[key] || key;
+            cleanedEndpoints[cleanKey] = (cleanedEndpoints[cleanKey] || 0) + stats.endpointCalls[key];
+        });
+        stats.endpointCalls = cleanedEndpoints;
+        
         saveStatsToLocal();
         
         const today = getTodayString();
         const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
         console.log(`[STATS] Loaded from GitHub: ${stats.apiCalls} calls, ${todayVisitors} visitors today`);
+        console.log(`[STATS] Endpoints:`, stats.endpointCalls);
         return true;
     } catch (error) {
         if (error.status === 404) {
             console.log('[STATS] No existing stats file on GitHub, will create new one');
-            return true; // Return true so we know GitHub is working
-        } else {
-            console.error('[STATS] Failed to load from GitHub:', error.message);
-            return false;
+            return true;
         }
+        console.error('[STATS] Failed to load from GitHub:', error.message);
+        return false;
     }
 }
 
-// Save stats to GitHub
 async function saveStatsToGitHub() {
-    if (!githubEnabled || !octokit) {
-        return false;
-    }
+    if (!githubEnabled || !octokit) return false;
 
     try {
         const statsData = {
             apiCalls: stats.apiCalls,
-            visitors: stats.visitors,  // Now saving as object
+            visitors: stats.visitors,
             endpointCalls: stats.endpointCalls,
             lastUpdated: new Date().toISOString()
         };
 
-        // Get current file SHA if exists
         let sha = null;
         try {
             const { data } = await octokit.repos.getContent({
@@ -192,9 +217,7 @@ async function saveStatsToGitHub() {
             });
             sha = data.sha;
         } catch (err) {
-            if (err.status !== 404) {
-                console.error('[STATS] Error getting file SHA:', err.message);
-            }
+            if (err.status !== 404) console.error('[STATS] Error getting file SHA:', err.message);
         }
 
         const contentEncoded = Buffer.from(JSON.stringify(statsData, null, 2)).toString('base64');
@@ -217,28 +240,20 @@ async function saveStatsToGitHub() {
         if (error.status === 401) {
             console.error('[STATS] Token became invalid, disabling GitHub backup');
             githubEnabled = false;
-        } else if (error.status === 403) {
-            console.error('[STATS] Rate limit or permission issue');
-        } else if (error.status === 404) {
-            console.error('[STATS] Repository not found');
         }
         return false;
     }
 }
 
-// Save stats to local file
 function saveStatsToLocal() {
     try {
         const statsData = {
             apiCalls: stats.apiCalls,
-            visitors: stats.visitors,  // Now saving as object
+            visitors: stats.visitors,
             endpointCalls: stats.endpointCalls,
             lastUpdated: new Date().toISOString()
         };
         fs.writeFileSync(`./${STATS_FILE}`, JSON.stringify(statsData, null, 2));
-        const today = getTodayString();
-        const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
-        console.log(`[STATS] Saved locally: ${stats.apiCalls} calls, ${todayVisitors} visitors today`);
         return true;
     } catch (error) {
         console.error('[STATS] Failed to save locally:', error.message);
@@ -246,7 +261,6 @@ function saveStatsToLocal() {
     }
 }
 
-// Load stats from local file
 function loadStatsFromLocal() {
     try {
         if (fs.existsSync(`./${STATS_FILE}`)) {
@@ -254,9 +268,17 @@ function loadStatsFromLocal() {
             const parsedStats = JSON.parse(content);
             
             stats.apiCalls = parsedStats.apiCalls || 0;
-            stats.visitors = parsedStats.visitors || {};  // Now it's an object
+            stats.visitors = parsedStats.visitors || {};
             stats.endpointCalls = parsedStats.endpointCalls || {};
             stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
+            
+            // Clean up old endpoint names
+            const cleanedEndpoints = {};
+            Object.keys(stats.endpointCalls).forEach(key => {
+                const cleanKey = ENDPOINT_NAME_MAP[key] || key;
+                cleanedEndpoints[cleanKey] = (cleanedEndpoints[cleanKey] || 0) + stats.endpointCalls[key];
+            });
+            stats.endpointCalls = cleanedEndpoints;
             
             const today = getTodayString();
             const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
@@ -269,22 +291,18 @@ function loadStatsFromLocal() {
     return false;
 }
 
-// Auto-save every minute (GitHub + Local)
 function startAutoSave() {
     setInterval(async () => {
-        // Always save locally
         saveStatsToLocal();
-        
-        // Try to save to GitHub if enabled
-        if (githubEnabled) {
-            await saveStatsToGitHub();
-        }
-    }, 60000); // Every 1 minute
-    
+        if (githubEnabled) await saveStatsToGitHub();
+    }, 60000);
     console.log('[STATS] Auto-save started (every 1 minute)');
 }
 
-// Rate limiting
+// ============================================
+// RATE LIMITING
+// ============================================
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -299,72 +317,47 @@ app.use('/search', limiter);
 // ============================================
 // API CALL TRACKING MIDDLEWARE
 // ============================================
-// This tracks ALL API calls including direct browser/tool access
 
-// Helper function to get endpoint name from path
-function getEndpointName(path) {
-    if (path.includes('youtubedl2')) return 'YouTube Downloader V2';
-    if (path.includes('youtubedl')) return 'YouTube Downloader';
-    if (path.includes('tiktokdl')) return 'TikTok Downloader';
-    if (path.includes('instagramdl')) return 'Instagram Downloader';
-    if (path.includes('textphoto')) return 'Text to Photo';
-    if (path.includes('freefire')) return 'Free Fire Player Info';
-    return path;
-}
-
-// Middleware to track all API calls to download and search endpoints
 app.use(['/download', '/search'], async (req, res, next) => {
     const path = req.path;
-
-    // Check if this is a valid API endpoint
-    const validEndpoints = [
-        '/youtubedl', '/youtubedl2', '/tiktokdl', 
-        '/instagramdl', '/textphoto', '/freefire'
-    ];
-
+    const validEndpoints = ['/youtubedl', '/youtubedl2', '/tiktokdl', 
+        '/instagramdl', '/textphoto', '/freefire'];
     const isValidEndpoint = validEndpoints.some(endpoint => path.includes(endpoint));
 
     if (isValidEndpoint) {
-        // Increment API call counter
-        stats.apiCalls++;
-
-        // Track endpoint-specific stats
-        const endpointKey = path.split('/').pop() || path;
-        stats.endpointCalls[endpointKey] = (stats.endpointCalls[endpointKey] || 0) + 1;
-
-        stats.lastUpdated = new Date().toISOString();
-
-        // Track visitor (daily unique based on IP)
+        const endpointName = getEndpointName(path);
         const clientIp = req.headers['x-forwarded-for'] || req.ip || 'unknown';
-        const today = getTodayString();
-
-        if (!stats.visitors[today]) {
-            stats.visitors[today] = {};
+        const fingerprint = getRequestFingerprint(clientIp, endpointName);
+        
+        // Prevent double counting
+        if (wasRecentlyCounted(fingerprint)) {
+            console.log(`[API CALL] ➜ ${endpointName} | SKIPPED (duplicate within 5s)`);
+            return next();
         }
 
+        stats.apiCalls++;
+        stats.endpointCalls[endpointName] = (stats.endpointCalls[endpointName] || 0) + 1;
+        stats.lastUpdated = new Date().toISOString();
+
+        // Track visitor
+        const today = getTodayString();
+        if (!stats.visitors[today]) stats.visitors[today] = {};
         const visitorHash = crypto.createHash('sha256').update(clientIp).digest('hex').substring(0, 16);
         const isNewVisitor = !stats.visitors[today][visitorHash];
         stats.visitors[today][visitorHash] = new Date().toISOString();
 
-        // Log the API call
-        const endpointName = getEndpointName(path);
-        const queryParams = Object.keys(req.query).length > 0 ? `?${Object.keys(req.query).join('&')}` : '';
-        console.log(`[API CALL] ➜ ${endpointName} | Total Calls: ${stats.apiCalls} | IP: ${clientIp.substring(0, 15)}... | New Visitor: ${isNewVisitor ? 'Yes' : 'No'}`);
+        console.log(`[API CALL] ➜ ${endpointName} | Total: ${stats.apiCalls} | New Visitor: ${isNewVisitor ? 'Yes' : 'No'}`);
 
-        // Save stats immediately (don't wait for auto-save)
         saveStatsToLocal();
-        if (githubEnabled) {
-            saveStatsToGitHub().catch(err => console.log('[TRACKING] GitHub save skipped'));
-        }
+        if (githubEnabled) saveStatsToGitHub().catch(() => {});
     }
-
     next();
 });
 
+// ============================================
+// HEALTH CHECK
+// ============================================
 
-// ============================================
-// HEALTH CHECK ENDPOINT
-// ============================================
 app.get('/health', (req, res) => {
   const today = getTodayString();
   const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
@@ -386,12 +379,10 @@ app.get('/health', (req, res) => {
 // STATS ENDPOINTS
 // ============================================
 
-// Get stats
 app.get('/stats', (req, res) => {
   const today = getTodayString();
   const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
   
-  // Calculate total unique visitors across all days
   let totalUniqueVisitors = 0;
   Object.values(stats.visitors).forEach(dayVisitors => {
     totalUniqueVisitors += Object.keys(dayVisitors).length;
@@ -399,8 +390,8 @@ app.get('/stats', (req, res) => {
   
   res.json({
     apiCalls: stats.apiCalls,
-    visitors: todayVisitors,  // Today's unique visitors
-    totalVisitors: totalUniqueVisitors,  // All-time unique visitors
+    visitors: todayVisitors,
+    totalVisitors: totalUniqueVisitors,
     endpointCalls: stats.endpointCalls,
     lastUpdated: stats.lastUpdated,
     githubBackup: githubEnabled,
@@ -408,65 +399,29 @@ app.get('/stats', (req, res) => {
   });
 });
 
-// Increment stats
+// Frontend visitor tracking only (no API call tracking here)
 app.post('/stats/increment', (req, res) => {
-  const { type, endpoint, visitorId } = req.body;
+  const { type, visitorId } = req.body;
   const today = getTodayString();
   
   if (type === 'visitor') {
-    // Get visitor identifier (IP or provided visitorId from frontend)
     const clientIp = req.headers['x-forwarded-for'] || req.ip || 'unknown';
-    // Use provided visitorId (IP from frontend) if available, otherwise use server-detected IP
     const vid = visitorId || clientIp;
-    
-    // Create hash of visitor ID for privacy
     const visitorHash = crypto.createHash('sha256').update(vid).digest('hex').substring(0, 16);
     
-    // Initialize today's visitors if not exists
-    if (!stats.visitors[today]) {
-        stats.visitors[today] = {};
-    }
-    
-    // Check if this visitor already visited today
+    if (!stats.visitors[today]) stats.visitors[today] = {};
     const isNewVisitor = !stats.visitors[today][visitorHash];
-    
-    // Mark visitor as visited today (store timestamp)
     stats.visitors[today][visitorHash] = new Date().toISOString();
     
-    // Clean up old visitor data (keep only last 30 days)
+    // Clean old data (30 days)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     Object.keys(stats.visitors).forEach(date => {
-        if (new Date(date) < thirtyDaysAgo) {
-            delete stats.visitors[date];
-        }
+        if (new Date(date) < thirtyDaysAgo) delete stats.visitors[date];
     });
     
     const todayCount = Object.keys(stats.visitors[today]).length;
-    
-    res.json({ 
-        success: true, 
-        isNewVisitor,
-        stats: {
-            apiCalls: stats.apiCalls,
-            visitors: todayCount
-        }
-    });
-  } else if (type === 'apiCall') {
-    stats.apiCalls++;
-    if (endpoint) {
-      stats.endpointCalls[endpoint] = (stats.endpointCalls[endpoint] || 0) + 1;
-    }
-    
-    const todayCount = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
-    
-    res.json({ 
-        success: true, 
-        stats: {
-            apiCalls: stats.apiCalls,
-            visitors: todayCount
-        }
-    });
+    res.json({ success: true, isNewVisitor, stats: { apiCalls: stats.apiCalls, visitors: todayCount } });
   } else {
     res.status(400).json({ success: false, message: 'Invalid type' });
   }
@@ -480,23 +435,13 @@ app.get('/download/youtubedl', async (req, res) => {
   try {
     const url = req.query.url;
     if (!url || (!url.includes('youtube.com') && !url.includes('youtu.be'))) {
-      return res.status(400).json({ 
-        status: false, 
-        message: "Please provide a valid YouTube URL" 
-      });
+      return res.status(400).json({ status: false, message: "Please provide a valid YouTube URL" });
     }
     const youtubeData = await youtubedl(url);
-    res.json({
-      status: true,
-      creator: "WALUKA🇱🇰",
-      result: youtubeData
-    });
+    res.json({ status: true, creator: "WALUKA🇱🇰", result: youtubeData });
   } catch (error) {
     console.error('API Error:', error);
-    res.status(500).json({ 
-      status: false, 
-      message: error.message
-    });
+    res.status(500).json({ status: false, message: error.message });
   }
 });
 
@@ -504,67 +449,37 @@ app.get('/download/youtubedl2', async (req, res) => {
   try {
     const url = req.query.url;
     if (!url || !url.includes('youtu')) {
-      return res.status(400).json({ 
-        status: false, 
-        message: "Please provide a valid YouTube URL" 
-      });
+      return res.status(400).json({ status: false, message: "Please provide a valid YouTube URL" });
     }
     const youtubeData = await youtubedl2(url);
-    res.json({
-      status: true,
-      creator: "WALUKA🇱🇰",
-      result: youtubeData
-    });
+    res.json({ status: true, creator: "WALUKA🇱🇰", result: youtubeData });
   } catch (error) {
     console.error('API Error:', error);
-    res.status(500).json({ 
-      status: false, 
-      message: error.message
-    });
+    res.status(500).json({ status: false, message: error.message });
   }
 });
 
 app.get('/download/tiktokdl', async (req, res) => {
   try {
     if (!req.query.url) {
-      return res.status(400).json({
-        success: false,
-        message: "Please provide a valid Tiktok URL"
-      });
+      return res.status(400).json({ success: false, message: "Please provide a valid Tiktok URL" });
     }
     const tiktokData = await tiktokdl(req.query.url);
-    res.json({
-      status: true,
-      creator: "WALUKA🇱🇰",
-      result: tiktokData
-    });
+    res.json({ status: true, creator: "WALUKA🇱🇰", result: tiktokData });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
 app.get('/download/instagramdl', async (req, res) => {
   try {
     if (!req.query.url) {
-      return res.status(400).json({
-        success: false,
-        message: "Please provide a valid Instagram URL"
-      });
+      return res.status(400).json({ success: false, message: "Please provide a valid Instagram URL" });
     }
     const instagramData = await instagramdl(req.query.url);
-    res.json({
-      status: true,
-      creator: "WALUKA🇱🇰",
-      result: instagramData
-    });
+    res.json({ status: true, creator: "WALUKA🇱🇰", result: instagramData });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
@@ -572,23 +487,13 @@ app.get('/search/freefire', async (req, res) => {
   try {
     const { region, uid } = req.query;
     if (!region || !uid) {
-      return res.status(400).json({ 
-        status: false, 
-        message: "Please provide both region and uid parameters" 
-      });
+      return res.status(400).json({ status: false, message: "Please provide both region and uid parameters" });
     }
     const playerData = await freefireinfo(region, uid);
-    res.json({
-      status: true,
-      creator: "WALUKA🇱🇰",
-      result: playerData
-    });
+    res.json({ status: true, creator: "WALUKA🇱🇰", result: playerData });
   } catch (error) {
     console.error('API Error:', error);
-    res.status(500).json({ 
-      status: false, 
-      message: error.message
-    });
+    res.status(500).json({ status: false, message: error.message });
   }
 });
 
@@ -596,28 +501,15 @@ app.get('/download/textphoto', async (req, res) => {
   try {
     const { url, text } = req.query;
     if (!url) {
-      return res.status(400).json({
-        status: false,
-        message: "Please provide a URL parameter"
-      });
+      return res.status(400).json({ status: false, message: "Please provide a URL parameter" });
     }
     if (!text) {
-      return res.status(400).json({
-        status: false,
-        message: "Please provide a text parameter"
-      });
+      return res.status(400).json({ status: false, message: "Please provide a text parameter" });
     }
     const result = await maker(url, text);
-    res.json({
-      status: true,
-      creator: "WALUKA🇱🇰",
-      result: result
-    });
+    res.json({ status: true, creator: "WALUKA🇱🇰", result: result });
   } catch (error) {
-    res.status(500).json({
-      status: false,
-      message: error.message
-    });
+    res.status(500).json({ status: false, message: error.message });
   }
 });
 
@@ -668,15 +560,9 @@ const PORT = process.env.PORT || 3000;
 async function startServer() {
     console.log('[STARTUP] Starting SRI API V3.0...');
     
-    // First try to load from GitHub
     const githubLoaded = await loadStatsFromGitHub();
+    if (!githubLoaded) loadStatsFromLocal();
     
-    // If GitHub failed, try local
-    if (!githubLoaded) {
-        loadStatsFromLocal();
-    }
-    
-    // Start auto-save
     startAutoSave();
     
     app.listen(PORT, '0.0.0.0', () => {
