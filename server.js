@@ -80,6 +80,36 @@ function getTodayString() {
     return new Date().toISOString().split('T')[0];
 }
 
+// Get client IP address properly (handles proxies)
+function getClientIP(req) {
+    // Check various headers for real client IP (when behind proxy)
+    const forwarded = req.headers['x-forwarded-for'];
+    const realIp = req.headers['x-real-ip'];
+    const cfConnectingIp = req.headers['cf-connecting-ip']; // Cloudflare
+
+    let clientIp = null;
+
+    if (forwarded) {
+        // X-Forwarded-For can be "client, proxy1, proxy2" - take the first one (client)
+        clientIp = forwarded.split(',')[0].trim();
+    } else if (realIp) {
+        clientIp = realIp;
+    } else if (cfConnectingIp) {
+        clientIp = cfConnectingIp;
+    } else if (req.ip) {
+        clientIp = req.ip;
+    } else {
+        clientIp = req.connection?.remoteAddress || 'unknown';
+    }
+
+    // Remove IPv6 prefix if present (::ffff:192.168.1.1 -> 192.168.1.1)
+    if (clientIp && clientIp.startsWith('::ffff:')) {
+        clientIp = clientIp.substring(7);
+    }
+
+    return clientIp || 'unknown';
+}
+
 // Test GitHub connection
 async function testGitHubConnection() {
     if (!octokit) {
@@ -386,19 +416,19 @@ app.get('/stats', (req, res) => {
   });
 });
 
-// Increment stats
+// Increment stats - FIXED VERSION
 app.post('/stats/increment', (req, res) => {
   const { type, endpoint, visitorId } = req.body;
   const today = getTodayString();
 
   if (type === 'visitor') {
-    // Get visitor identifier (IP or provided visitorId from frontend)
-    const clientIp = req.headers['x-forwarded-for'] || req.ip || 'unknown';
-    // Use provided visitorId (IP from frontend) if available, otherwise use server-detected IP
-    const vid = visitorId || clientIp;
+    // Get client IP using our proper IP detection function
+    const clientIp = visitorId || getClientIP(req);
+
+    console.log(`[VISITOR] Tracking visitor. IP: ${clientIp ? clientIp.substring(0, 10) + '...' : 'unknown'}`);
 
     // Create hash of visitor ID for privacy
-    const visitorHash = crypto.createHash('sha256').update(vid).digest('hex').substring(0, 16);
+    const visitorHash = crypto.createHash('sha256').update(clientIp).digest('hex').substring(0, 16);
 
     // Initialize today's visitors if not exists
     if (!stats.visitors[today]) {
@@ -408,8 +438,15 @@ app.post('/stats/increment', (req, res) => {
     // Check if this visitor already visited today
     const isNewVisitor = !stats.visitors[today][visitorHash];
 
-    // Mark visitor as visited today (store timestamp)
-    stats.visitors[today][visitorHash] = new Date().toISOString();
+    if (isNewVisitor) {
+        // Mark visitor as visited today (store timestamp)
+        stats.visitors[today][visitorHash] = new Date().toISOString();
+        console.log(`[VISITOR] ✅ New visitor recorded. Hash: ${visitorHash}`);
+    } else {
+        // Update timestamp for existing visitor
+        stats.visitors[today][visitorHash] = new Date().toISOString();
+        console.log(`[VISITOR] ℹ️ Returning visitor. Hash: ${visitorHash}`);
+    }
 
     // Clean up old visitor data (keep only last 30 days)
     const thirtyDaysAgo = new Date();
@@ -422,12 +459,21 @@ app.post('/stats/increment', (req, res) => {
 
     const todayCount = Object.keys(stats.visitors[today]).length;
 
+    // Calculate total unique visitors
+    let totalUniqueVisitors = 0;
+    Object.values(stats.visitors).forEach(dayVisitors => {
+        totalUniqueVisitors += Object.keys(dayVisitors).length;
+    });
+
     res.json({ 
         success: true, 
         isNewVisitor,
+        todayVisitors: todayCount,
+        totalVisitors: totalUniqueVisitors,
         stats: {
             apiCalls: stats.apiCalls,
-            visitors: todayCount
+            visitors: todayCount,
+            totalVisitors: totalUniqueVisitors
         }
     });
   } else if (type === 'apiCall') {
