@@ -1,13 +1,15 @@
-// server.js - Koyeb Optimized with GitHub-Based Health Check System
+// server.js - Koyeb Optimized with GitHub Stats & Daily Health Check
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
+
+// GitHub integration
 const { Octokit } = require('@octokit/rest');
 const crypto = require('crypto');
 
-// Import API modules
+// Import API modules from api/ folder
 const youtubedl = require('./api/youtubedl');
 const tiktokdl = require('./api/tiktokdl');
 const instagramdl = require('./api/instagramdl');
@@ -17,9 +19,11 @@ const youtubedl2 = require('./api/youtubedl2');
 
 const app = express();
 
+// Trust proxy (required for Koyeb)
 app.set('trust proxy', 1);
 app.set('json spaces', 2);
 
+// Middleware
 app.use(cors());
 app.use(express.json());
 
@@ -34,6 +38,8 @@ const GITHUB_REPO_NAME = process.env.GITHUB_REPO_NAME || 'SRI-API-STORE';
 console.log('[GITHUB] Environment check:');
 console.log('[GITHUB] GITHUB_TOKEN exists:', !!GITHUB_TOKEN);
 console.log('[GITHUB] GITHUB_TOKEN length:', GITHUB_TOKEN ? GITHUB_TOKEN.length : 0);
+console.log('[GITHUB] GITHUB_REPO_OWNER:', GITHUB_REPO_OWNER);
+console.log('[GITHUB] GITHUB_REPO_NAME:', GITHUB_REPO_NAME);
 
 let octokit = null;
 let githubEnabled = false;
@@ -45,24 +51,36 @@ if (GITHUB_TOKEN && GITHUB_TOKEN.length > 10 && !GITHUB_TOKEN.includes('your')) 
         console.log('[GITHUB] Octokit initialized successfully');
     } catch (error) {
         console.error('[GITHUB] Failed to initialize Octokit:', error.message);
+        githubEnabled = false;
     }
+} else {
+    console.warn('[GITHUB] GITHUB_TOKEN not set, too short, or contains placeholder text');
 }
 
 const STATS_FILE = 'api_stats1.json';
-const HEALTH_FILE = 'api_health.json'; // NEW: Separate health status file
+const HEALTH_FILE = 'api_health.json';
 
 // ============================================
-// ENDPOINT CONFIGURATION
+// ENDPOINT NAME MAPPING - Consistent naming
 // ============================================
 
-const ENDPOINTS_CONFIG = [
-    { name: "YouTube Downloader", path: "/download/youtubedl", category: "download", method: "GET", description: "Download YouTube videos" },
-    { name: "YouTube Downloader V2", path: "/download/youtubedl2", category: "download", method: "GET", description: "Alternative YouTube downloader" },
-    { name: "TikTok Downloader", path: "/download/tiktokdl", category: "download", method: "GET", description: "Download TikTok videos" },
-    { name: "Instagram Downloader", path: "/download/instagramdl", category: "download", method: "GET", description: "Download Instagram content" },
-    { name: "Text to Photo", path: "/download/textphoto", category: "download", method: "GET", description: "Generate text images" },
-    { name: "Free Fire Player Info", path: "/search/freefire", category: "search", method: "GET", description: "Free Fire player stats" }
-];
+const ENDPOINT_NAME_MAP = {
+    'youtubedl': 'YouTube Downloader',
+    'youtubedl2': 'YouTube Downloader V2',
+    'tiktokdl': 'TikTok Downloader',
+    'instagramdl': 'Instagram Downloader',
+    'textphoto': 'Text to Photo',
+    'freefire': 'Free Fire Player Info'
+};
+
+function getEndpointName(path) {
+    const parts = path.split('/').filter(p => p);
+    const lastPart = parts[parts.length - 1] || path;
+    return ENDPOINT_NAME_MAP[lastPart] || lastPart
+        .replace(/([A-Z])/g, ' $1')
+        .replace(/^./, str => str.toUpperCase())
+        .replace(/dl$/i, ' Downloader');
+}
 
 // ============================================
 // STATS SYSTEM
@@ -75,528 +93,22 @@ let stats = {
     lastUpdated: new Date().toISOString()
 };
 
-// ============================================
-// HEALTH CHECK SYSTEM - GITHUB BASED
-// ============================================
-
-let healthStatus = {
-    lastCheck: null,
-    nextCheck: null,
-    timezone: 'Asia/Colombo',
-    endpoints: {},
-    summary: { online: 0, offline: 0, total: 0 },
-    isChecking: false
-};
-
-// Initialize endpoints health status
-ENDPOINTS_CONFIG.forEach(ep => {
-    healthStatus.endpoints[ep.path] = {
-        name: ep.name,
-        category: ep.category,
-        status: 'unknown', // unknown, online, offline
-        lastChecked: null,
-        responseTime: null
-    };
-});
-
-// Get Sri Lankan time
-function getSriLankanTime() {
-    return new Date(new Date().toLocaleString("en-US", { timeZone: healthStatus.timezone }));
-}
-
-function formatSriLankanTime(date) {
-    return date.toLocaleString('en-US', { 
-        timeZone: healthStatus.timezone,
-        month: 'short', day: 'numeric', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
-    });
-}
+// Track recently counted requests to prevent double counting
+const recentRequests = new Map();
+const REQUEST_CACHE_TIMEOUT = 5000; // 5 seconds
 
 function getTodayString() {
     return new Date().toISOString().split('T')[0];
 }
 
-// ============================================
-// GITHUB FUNCTIONS - STATS
-// ============================================
-
-async function loadStatsFromGitHub() {
-    if (!githubEnabled || !octokit) return false;
-
-    try {
-        const { data } = await octokit.repos.getContent({
-            owner: GITHUB_REPO_OWNER,
-            repo: GITHUB_REPO_NAME,
-            path: STATS_FILE
-        });
-
-        const content = Buffer.from(data.content, 'base64').toString('utf8');
-        const parsedStats = JSON.parse(content);
-        
-        stats.apiCalls = parsedStats.apiCalls || 0;
-        stats.visitors = parsedStats.visitors || {};
-        stats.endpointCalls = parsedStats.endpointCalls || {};
-        stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
-        
-        saveStatsToLocal();
-        console.log(`[STATS] Loaded from GitHub: ${stats.apiCalls} calls`);
-        return true;
-    } catch (error) {
-        if (error.status === 404) {
-            console.log('[STATS] No existing stats file on GitHub');
-            return true;
-        }
-        console.error('[STATS] Failed to load from GitHub:', error.message);
-        return false;
-    }
-}
-
-async function saveStatsToGitHub() {
-    if (!githubEnabled || !octokit) return false;
-
-    try {
-        let sha = null;
-        try {
-            const { data } = await octokit.repos.getContent({
-                owner: GITHUB_REPO_OWNER,
-                repo: GITHUB_REPO_NAME,
-                path: STATS_FILE
-            });
-            sha = data.sha;
-        } catch (err) {
-            if (err.status !== 404) throw err;
-        }
-
-        const contentEncoded = Buffer.from(JSON.stringify(stats, null, 2)).toString('base64');
-
-        await octokit.repos.createOrUpdateFileContents({
-            owner: GITHUB_REPO_OWNER,
-            repo: GITHUB_REPO_NAME,
-            path: STATS_FILE,
-            message: `Update API stats - ${stats.apiCalls} calls`,
-            content: contentEncoded,
-            sha: sha || undefined,
-        });
-
-        console.log(`[STATS] Saved to GitHub: ${stats.apiCalls} calls`);
-        return true;
-    } catch (error) {
-        console.error('[STATS] Failed to save to GitHub:', error.message);
-        return false;
-    }
-}
-
-function saveStatsToLocal() {
-    try {
-        fs.writeFileSync(`./${STATS_FILE}`, JSON.stringify(stats, null, 2));
-    } catch (error) {
-        console.error('[STATS] Failed to save locally:', error.message);
-    }
-}
-
-function loadStatsFromLocal() {
-    try {
-        if (fs.existsSync(`./${STATS_FILE}`)) {
-            const content = fs.readFileSync(`./${STATS_FILE}`, 'utf8');
-            const parsedStats = JSON.parse(content);
-            stats = { ...stats, ...parsedStats };
-            console.log(`[STATS] Loaded from local: ${stats.apiCalls} calls`);
-            return true;
-        }
-    } catch (error) {
-        console.error('[STATS] Failed to load from local:', error.message);
-    }
-    return false;
-}
-
-// ============================================
-// GITHUB FUNCTIONS - HEALTH STATUS
-// ============================================
-
-async function loadHealthFromGitHub() {
-    if (!githubEnabled || !octokit) {
-        console.log('[HEALTH] GitHub not enabled, using local health data');
-        return loadHealthFromLocal();
-    }
-
-    try {
-        console.log('[HEALTH] Loading health status from GitHub...');
-        const { data } = await octokit.repos.getContent({
-            owner: GITHUB_REPO_OWNER,
-            repo: GITHUB_REPO_NAME,
-            path: HEALTH_FILE
-        });
-
-        const content = Buffer.from(data.content, 'base64').toString('utf8');
-        const parsedHealth = JSON.parse(content);
-        
-        healthStatus.lastCheck = parsedHealth.lastCheck;
-        healthStatus.nextCheck = parsedHealth.nextCheck;
-        healthStatus.endpoints = parsedHealth.endpoints || healthStatus.endpoints;
-        healthStatus.summary = parsedHealth.summary || { online: 0, offline: 0, total: 0 };
-        
-        saveHealthToLocal();
-        
-        const checkTime = healthStatus.lastCheck ? formatSriLankanTime(new Date(healthStatus.lastCheck)) : 'Never';
-        console.log(`[HEALTH] Loaded from GitHub: Last check ${checkTime}`);
-        console.log(`[HEALTH] Status: ${healthStatus.summary.online}/${healthStatus.summary.total} online`);
-        return true;
-    } catch (error) {
-        if (error.status === 404) {
-            console.log('[HEALTH] No existing health file on GitHub, creating new');
-            await saveHealthToGitHub();
-            return true;
-        }
-        console.error('[HEALTH] Failed to load from GitHub:', error.message);
-        return loadHealthFromLocal();
-    }
-}
-
-async function saveHealthToGitHub() {
-    if (!githubEnabled || !octokit) {
-        console.log('[HEALTH] GitHub not enabled, saving locally only');
-        return saveHealthToLocal();
-    }
-
-    try {
-        let sha = null;
-        try {
-            const { data } = await octokit.repos.getContent({
-                owner: GITHUB_REPO_OWNER,
-                repo: GITHUB_REPO_NAME,
-                path: HEALTH_FILE
-            });
-            sha = data.sha;
-        } catch (err) {
-            if (err.status !== 404) throw err;
-        }
-
-        const contentEncoded = Buffer.from(JSON.stringify(healthStatus, null, 2)).toString('base64');
-
-        await octokit.repos.createOrUpdateFileContents({
-            owner: GITHUB_REPO_OWNER,
-            repo: GITHUB_REPO_NAME,
-            path: HEALTH_FILE,
-            message: `Update health status - ${healthStatus.summary.online}/${healthStatus.summary.total} online`,
-            content: contentEncoded,
-            sha: sha || undefined,
-        });
-
-        console.log(`[HEALTH] Saved to GitHub: ${healthStatus.summary.online}/${healthStatus.summary.total} online`);
-        return true;
-    } catch (error) {
-        console.error('[HEALTH] Failed to save to GitHub:', error.message);
-        return saveHealthToLocal();
-    }
-}
-
-function saveHealthToLocal() {
-    try {
-        fs.writeFileSync(`./${HEALTH_FILE}`, JSON.stringify(healthStatus, null, 2));
-        return true;
-    } catch (error) {
-        console.error('[HEALTH] Failed to save locally:', error.message);
-        return false;
-    }
-}
-
-function loadHealthFromLocal() {
-    try {
-        if (fs.existsSync(`./${HEALTH_FILE}`)) {
-            const content = fs.readFileSync(`./${HEALTH_FILE}`, 'utf8');
-            const parsedHealth = JSON.parse(content);
-            healthStatus = { ...healthStatus, ...parsedHealth };
-            console.log(`[HEALTH] Loaded from local file`);
-            return true;
-        }
-    } catch (error) {
-        console.error('[HEALTH] Failed to load from local:', error.message);
-    }
-    return false;
-}
-
-// ============================================
-// HEALTH CHECK LOGIC
-// ============================================
-
-async function checkSingleEndpoint(endpointConfig) {
-    const baseUrl = `http://localhost:${process.env.PORT || 3000}`;
-    let testUrl = `${baseUrl}${endpointConfig.path}`;
-
-    // Add dummy params if needed
-    if (endpointConfig.path === '/download/youtubedl' || endpointConfig.path === '/download/youtubedl2') {
-        testUrl += '?url=https://youtube.com/watch?v=dQw4w9WgXcQ';
-    } else if (endpointConfig.path === '/download/tiktokdl') {
-        testUrl += '?url=https://vt.tiktok.com/ZSuYLQkMm/';
-    } else if (endpointConfig.path === '/download/instagramdl') {
-        testUrl += '?url=https://www.instagram.com/reel/test/';
-    } else if (endpointConfig.path === '/download/textphoto') {
-        testUrl += '?url=https://textpro.me/test.html&text=test';
-    } else if (endpointConfig.path === '/search/freefire') {
-        testUrl += '?region=SG&uid=123456';
-    }
-
-    const startTime = Date.now();
-
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
-
-        const response = await fetch(testUrl, { 
-            method: 'GET', 
-            signal: controller.signal,
-            headers: { 'Accept': 'application/json' }
-        });
-
-        clearTimeout(timeoutId);
-        const responseTime = Date.now() - startTime;
-
-        let isOnline = false;
-        let apiStatus = null;
-
-        if (response.ok) {
-            try {
-                const data = await response.json();
-                apiStatus = data.status;
-
-                // ✅ FIXED: API is ONLINE only if response has {"status": true}
-                // OFFLINE if {"status": false}, null, undefined, or any other value
-                if (data && data.status === true) {
-                    isOnline = true;
-                    console.log(`[HEALTH] ✅ ${endpointConfig.name}: ONLINE (status: true)`);
-                } else {
-                    isOnline = false;
-                    console.log(`[HEALTH] ❌ ${endpointConfig.name}: OFFLINE (status: ${data?.status})`);
-                }
-            } catch (e) {
-                // Invalid JSON = OFFLINE
-                isOnline = false;
-                console.log(`[HEALTH] ❌ ${endpointConfig.name}: OFFLINE (invalid JSON response)`);
-            }
-        } else {
-            // HTTP error = OFFLINE
-            isOnline = false;
-            console.log(`[HEALTH] ❌ ${endpointConfig.name}: OFFLINE (HTTP ${response.status})`);
-        }
-
-        return {
-            status: isOnline ? 'online' : 'offline',
-            responseTime: responseTime,
-            error: null,
-            apiStatus: apiStatus
-        };
-
-    } catch (error) {
-        console.log(`[HEALTH] ❌ ${endpointConfig.name}: OFFLINE (error: ${error.message})`);
-        return {
-            status: 'offline',
-            responseTime: Date.now() - startTime,
-            error: error.message,
-            apiStatus: null
-        };
-    }
-}
-
-async function performHealthCheck(force = false) {
-    if (healthStatus.isChecking && !force) {
-        console.log('[HEALTH] Check already in progress, skipping...');
-        return;
-    }
-
-    const now = getSriLankanTime();
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
-
-    // Check if already checked today at 12 AM (unless forced)
-    if (!force && healthStatus.lastCheck) {
-        const lastCheck = new Date(healthStatus.lastCheck);
-        const lastCheckSL = new Date(lastCheck.toLocaleString("en-US", { timeZone: healthStatus.timezone }));
-        
-        // If last check was today after 12:00 AM, skip
-        if (lastCheckSL.getDate() === now.getDate() && 
-            lastCheckSL.getMonth() === now.getMonth() &&
-            lastCheckSL.getFullYear() === now.getFullYear() &&
-            lastCheckSL.getHours() >= 0) {
-            console.log('[HEALTH] Already checked today, skipping...');
-            return;
-        }
-    }
-
-    console.log('[HEALTH] Starting health check at', formatSriLankanTime(now));
-    healthStatus.isChecking = true;
-
-    let onlineCount = 0;
-    let offlineCount = 0;
-
-    // Check all endpoints
-    for (const endpoint of ENDPOINTS_CONFIG) {
-        console.log(`[HEALTH] Checking ${endpoint.name}...`);
-        
-        const result = await checkSingleEndpoint(endpoint);
-        
-        healthStatus.endpoints[endpoint.path] = {
-            name: endpoint.name,
-            category: endpoint.category,
-            status: result.status,
-            lastChecked: new Date().toISOString(),
-            responseTime: result.responseTime
-        };
-
-        if (result.status === 'online') {
-            onlineCount++;
-        } else {
-            offlineCount++;
-        }
-
-        // Small delay between checks to avoid overwhelming
-        await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-
-    healthStatus.lastCheck = new Date().toISOString();
-    healthStatus.summary = {
-        online: onlineCount,
-        offline: offlineCount,
-        total: ENDPOINTS_CONFIG.length
-    };
-    healthStatus.isChecking = false;
-
-    // Calculate next check (tomorrow 12:00 AM)
-    const nextCheck = new Date(now);
-    nextCheck.setDate(nextCheck.getDate() + 1);
-    nextCheck.setHours(0, 0, 0, 0);
-    healthStatus.nextCheck = nextCheck.toISOString();
-
-    console.log(`[HEALTH] Check completed: ${onlineCount}/${ENDPOINTS_CONFIG.length} online`);
-    
-    // Save to GitHub
-    await saveHealthToGitHub();
-    
-    return healthStatus.summary;
-}
-
-// ============================================
-// SCHEDULER - 12:00 AM DAILY CHECK
-// ============================================
-
-function startHealthCheckScheduler() {
-    console.log('[HEALTH] Starting scheduler...');
-
-    // Check immediately on startup if needed
-    checkAndRunHealthCheck();
-
-    // Run every minute to check if it's time
-    setInterval(() => {
-        checkAndRunHealthCheck();
-    }, 60000); // Every minute
-
-    console.log('[HEALTH] Scheduler started - checks daily at 12:00 AM SL time');
-}
-
-async function checkAndRunHealthCheck() {
-    const now = getSriLankanTime();
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
-
-    // Only run at 12:00 AM (00:00)
-    if (currentHour === 0 && currentMinute === 0) {
-        // Double check we haven't already run today
-        if (healthStatus.lastCheck) {
-            const lastCheck = new Date(healthStatus.lastCheck);
-            const lastCheckSL = new Date(lastCheck.toLocaleString("en-US", { timeZone: healthStatus.timezone }));
-            
-            if (lastCheckSL.getDate() === now.getDate()) {
-                return; // Already checked today
-            }
-        }
-        
-        console.log('[HEALTH] 12:00 AM - Starting daily health check');
-        await performHealthCheck();
-    }
-}
-
-// ============================================
-// SERVER STARTUP CHECK
-// ============================================
-
-async function checkHealthOnStartup() {
-    console.log('[STARTUP] Checking if health check is needed...');
-    
-    const now = getSriLankanTime();
-    
-    if (!healthStatus.lastCheck) {
-        console.log('[STARTUP] No previous health check found, running now...');
-        await performHealthCheck(true);
-        return;
-    }
-
-    const lastCheck = new Date(healthStatus.lastCheck);
-    const lastCheckSL = new Date(lastCheck.toLocaleString("en-US", { timeZone: healthStatus.timezone }));
-    
-    // Check if last check was today
-    const isToday = lastCheckSL.getDate() === now.getDate() && 
-                    lastCheckSL.getMonth() === now.getMonth() &&
-                    lastCheckSL.getFullYear() === now.getFullYear();
-
-    if (!isToday) {
-        // Check if it's past 12:00 AM
-        if (now.getHours() >= 0) {
-            console.log('[STARTUP] New day, health check not run yet, running now...');
-            await performHealthCheck(true);
-        } else {
-            console.log('[STARTUP] Waiting for 12:00 AM to run health check');
-        }
-    } else {
-        console.log('[STARTUP] Health check already completed today at', formatSriLankanTime(lastCheckSL));
-    }
-}
-
-// ============================================
-// API ROUTES - HEALTH
-// ============================================
-
-app.get('/health', (req, res) => {
-    res.status(200).json({
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime()
+function getSriLankanDateString() {
+    return new Date().toLocaleDateString('en-CA', { 
+        timeZone: 'Asia/Colombo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
     });
-});
-
-// NEW: Health status endpoint for frontend
-app.get('/health/status', async (req, res) => {
-    // Reload from GitHub to get latest
-    if (githubEnabled) {
-        await loadHealthFromGitHub();
-    }
-    
-    res.json({
-        lastCheck: healthStatus.lastCheck,
-        nextCheck: healthStatus.nextCheck,
-        timezone: healthStatus.timezone,
-        summary: healthStatus.summary,
-        endpoints: healthStatus.endpoints,
-        isChecking: healthStatus.isChecking,
-        timestamp: new Date().toISOString()
-    });
-});
-
-// NEW: Force health check (for admin use)
-app.post('/health/check', async (req, res) => {
-    // Optional: Add authentication here
-    const result = await performHealthCheck(true);
-    res.json({
-        success: true,
-        result: result,
-        timestamp: new Date().toISOString()
-    });
-});
-
-// ============================================
-// EXISTING API ROUTES
-// ============================================
-
-const recentRequests = new Map();
-const REQUEST_CACHE_TIMEOUT = 5000;
+}
 
 function getRequestFingerprint(clientIp, endpoint) {
     const minute = Math.floor(Date.now() / 1000 / 60);
@@ -619,16 +131,529 @@ function wasRecentlyCounted(fingerprint) {
     return false;
 }
 
-function getEndpointName(path) {
-    const parts = path.split('/').filter(p => p);
-    const lastPart = parts[parts.length - 1] || path;
-    return lastPart
-        .replace(/([A-Z])/g, ' $1')
-        .replace(/^./, str => str.toUpperCase())
-        .replace(/dl$/i, ' Downloader');
+// ============================================
+// HEALTH CHECK SYSTEM
+// ============================================
+
+let healthStatus = {
+    lastCheckDate: null,
+    lastCheckTime: null,
+    nextCheckTime: null,
+    endpoints: {},
+    summary: { online: 0, offline: 0, total: 0 }
+};
+
+const ENDPOINTS_TO_CHECK = [
+    { name: 'YouTube Downloader', path: '/download/youtubedl', method: 'GET', testParams: { url: 'https://youtube.com/watch?v=dQw4w9WgXcQ' } },
+    { name: 'YouTube Downloader V2', path: '/download/youtubedl2', method: 'GET', testParams: { url: 'https://youtube.com/watch?v=dQw4w9WgXcQ' } },
+    { name: 'TikTok Downloader', path: '/download/tiktokdl', method: 'GET', testParams: { url: 'https://vt.tiktok.com/ZSuYLQkMm/' } },
+    { name: 'Instagram Downloader', path: '/download/instagramdl', method: 'GET', testParams: { url: 'https://www.instagram.com/reel/DKR-FW1yo_p/' } },
+    { name: 'Text to Photo', path: '/download/textphoto', method: 'GET', testParams: { url: 'https://textpro.me/create-naruto-logo-style-text-effect-online-1125.html', text: 'Test' } },
+    { name: 'Free Fire Player Info', path: '/search/freefire', method: 'GET', testParams: { region: 'SG', uid: '2326343985' } }
+];
+
+// ============================================
+// GITHUB FUNCTIONS - STATS
+// ============================================
+
+async function testGitHubConnection() {
+    if (!octokit) return false;
+    try {
+        const { data: user } = await octokit.users.getAuthenticated();
+        console.log(`[GITHUB] Authenticated as: ${user.login}`);
+        const { data: repo } = await octokit.repos.get({
+            owner: GITHUB_REPO_OWNER,
+            repo: GITHUB_REPO_NAME
+        });
+        console.log(`[GITHUB] Repository access confirmed: ${repo.full_name}`);
+        return true;
+    } catch (error) {
+        console.error('[GITHUB] Connection test failed:', error.message);
+        return false;
+    }
 }
 
-// Stats tracking middleware
+async function loadStatsFromGitHub() {
+    if (!githubEnabled || !octokit) {
+        console.log('[STATS] GitHub not enabled, skipping GitHub load');
+        return false;
+    }
+
+    const connected = await testGitHubConnection();
+    if (!connected) {
+        githubEnabled = false;
+        return false;
+    }
+
+    try {
+        console.log('[STATS] Loading stats from GitHub...');
+        const { data } = await octokit.repos.getContent({
+            owner: GITHUB_REPO_OWNER,
+            repo: GITHUB_REPO_NAME,
+            path: STATS_FILE
+        });
+
+        const content = Buffer.from(data.content, 'base64').toString('utf8');
+        const parsedStats = JSON.parse(content);
+        
+        // Merge with validation
+        stats.apiCalls = parsedStats.apiCalls || 0;
+        stats.visitors = parsedStats.visitors || {};
+        stats.endpointCalls = parsedStats.endpointCalls || {};
+        stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
+        
+        // Clean up old endpoint names if any
+        const cleanedEndpoints = {};
+        Object.keys(stats.endpointCalls).forEach(key => {
+            const cleanKey = ENDPOINT_NAME_MAP[key] || key;
+            cleanedEndpoints[cleanKey] = (cleanedEndpoints[cleanKey] || 0) + stats.endpointCalls[key];
+        });
+        stats.endpointCalls = cleanedEndpoints;
+        
+        saveStatsToLocal();
+        
+        const today = getTodayString();
+        const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
+        console.log(`[STATS] Loaded from GitHub: ${stats.apiCalls} calls, ${todayVisitors} visitors today`);
+        console.log(`[STATS] Endpoints:`, stats.endpointCalls);
+        return true;
+    } catch (error) {
+        if (error.status === 404) {
+            console.log('[STATS] No existing stats file on GitHub, will create new one');
+            return true;
+        }
+        console.error('[STATS] Failed to load from GitHub:', error.message);
+        return false;
+    }
+}
+
+async function saveStatsToGitHub() {
+    if (!githubEnabled || !octokit) return false;
+
+    try {
+        const statsData = {
+            apiCalls: stats.apiCalls,
+            visitors: stats.visitors,
+            endpointCalls: stats.endpointCalls,
+            lastUpdated: new Date().toISOString()
+        };
+
+        let sha = null;
+        try {
+            const { data } = await octokit.repos.getContent({
+                owner: GITHUB_REPO_OWNER,
+                repo: GITHUB_REPO_NAME,
+                path: STATS_FILE
+            });
+            sha = data.sha;
+        } catch (err) {
+            if (err.status !== 404) console.error('[STATS] Error getting file SHA:', err.message);
+        }
+
+        const contentEncoded = Buffer.from(JSON.stringify(statsData, null, 2)).toString('base64');
+
+        await octokit.repos.createOrUpdateFileContents({
+            owner: GITHUB_REPO_OWNER,
+            repo: GITHUB_REPO_NAME,
+            path: STATS_FILE,
+            message: `Update API stats - ${stats.apiCalls} calls`,
+            content: contentEncoded,
+            sha: sha || undefined,
+        });
+
+        const today = getTodayString();
+        const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
+        console.log(`[STATS] ✅ Saved to GitHub: ${stats.apiCalls} calls, ${todayVisitors} visitors today`);
+        return true;
+    } catch (error) {
+        console.error('[STATS] ❌ Failed to save to GitHub:', error.message);
+        if (error.status === 401) {
+            console.error('[STATS] Token became invalid, disabling GitHub backup');
+            githubEnabled = false;
+        }
+        return false;
+    }
+}
+
+// ============================================
+// GITHUB FUNCTIONS - HEALTH STATUS
+// ============================================
+
+async function loadHealthFromGitHub() {
+    if (!githubEnabled || !octokit) {
+        console.log('[HEALTH] GitHub not enabled, loading from local');
+        return loadHealthFromLocal();
+    }
+
+    try {
+        console.log('[HEALTH] Loading health status from GitHub...');
+        const { data } = await octokit.repos.getContent({
+            owner: GITHUB_REPO_OWNER,
+            repo: GITHUB_REPO_NAME,
+            path: HEALTH_FILE
+        });
+
+        const content = Buffer.from(data.content, 'base64').toString('utf8');
+        const parsedHealth = JSON.parse(content);
+        
+        healthStatus = {
+            lastCheckDate: parsedHealth.lastCheckDate || null,
+            lastCheckTime: parsedHealth.lastCheckTime || null,
+            nextCheckTime: parsedHealth.nextCheckTime || null,
+            endpoints: parsedHealth.endpoints || {},
+            summary: parsedHealth.summary || { online: 0, offline: 0, total: 0 }
+        };
+        
+        saveHealthToLocal();
+        
+        console.log(`[HEALTH] Loaded from GitHub: ${healthStatus.summary.online}/${healthStatus.summary.total} online`);
+        return true;
+    } catch (error) {
+        if (error.status === 404) {
+            console.log('[HEALTH] No existing health file on GitHub');
+            return loadHealthFromLocal();
+        }
+        console.error('[HEALTH] Failed to load from GitHub:', error.message);
+        return loadHealthFromLocal();
+    }
+}
+
+async function saveHealthToGitHub() {
+    if (!githubEnabled || !octokit) return false;
+
+    try {
+        let sha = null;
+        try {
+            const { data } = await octokit.repos.getContent({
+                owner: GITHUB_REPO_OWNER,
+                repo: GITHUB_REPO_NAME,
+                path: HEALTH_FILE
+            });
+            sha = data.sha;
+        } catch (err) {
+            if (err.status !== 404) console.error('[HEALTH] Error getting file SHA:', err.message);
+        }
+
+        const contentEncoded = Buffer.from(JSON.stringify(healthStatus, null, 2)).toString('base64');
+
+        await octokit.repos.createOrUpdateFileContents({
+            owner: GITHUB_REPO_OWNER,
+            repo: GITHUB_REPO_NAME,
+            path: HEALTH_FILE,
+            message: `Update API health - ${healthStatus.summary.online}/${healthStatus.summary.total} online - ${new Date().toISOString()}`,
+            content: contentEncoded,
+            sha: sha || undefined,
+        });
+
+        console.log(`[HEALTH] ✅ Saved to GitHub: ${healthStatus.summary.online}/${healthStatus.summary.total} online`);
+        return true;
+    } catch (error) {
+        console.error('[HEALTH] ❌ Failed to save to GitHub:', error.message);
+        return false;
+    }
+}
+
+// ============================================
+// LOCAL STORAGE FUNCTIONS
+// ============================================
+
+function saveStatsToLocal() {
+    try {
+        const statsData = {
+            apiCalls: stats.apiCalls,
+            visitors: stats.visitors,
+            endpointCalls: stats.endpointCalls,
+            lastUpdated: new Date().toISOString()
+        };
+        fs.writeFileSync(`./${STATS_FILE}`, JSON.stringify(statsData, null, 2));
+        return true;
+    } catch (error) {
+        console.error('[STATS] Failed to save locally:', error.message);
+        return false;
+    }
+}
+
+function loadStatsFromLocal() {
+    try {
+        if (fs.existsSync(`./${STATS_FILE}`)) {
+            const content = fs.readFileSync(`./${STATS_FILE}`, 'utf8');
+            const parsedStats = JSON.parse(content);
+            
+            stats.apiCalls = parsedStats.apiCalls || 0;
+            stats.visitors = parsedStats.visitors || {};
+            stats.endpointCalls = parsedStats.endpointCalls || {};
+            stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
+            
+            // Clean up old endpoint names
+            const cleanedEndpoints = {};
+            Object.keys(stats.endpointCalls).forEach(key => {
+                const cleanKey = ENDPOINT_NAME_MAP[key] || key;
+                cleanedEndpoints[cleanKey] = (cleanedEndpoints[cleanKey] || 0) + stats.endpointCalls[key];
+            });
+            stats.endpointCalls = cleanedEndpoints;
+            
+            const today = getTodayString();
+            const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
+            console.log(`[STATS] Loaded from local: ${stats.apiCalls} calls, ${todayVisitors} visitors today`);
+            return true;
+        }
+    } catch (error) {
+        console.error('[STATS] Failed to load from local:', error.message);
+    }
+    return false;
+}
+
+function saveHealthToLocal() {
+    try {
+        fs.writeFileSync(`./${HEALTH_FILE}`, JSON.stringify(healthStatus, null, 2));
+        return true;
+    } catch (error) {
+        console.error('[HEALTH] Failed to save locally:', error.message);
+        return false;
+    }
+}
+
+function loadHealthFromLocal() {
+    try {
+        if (fs.existsSync(`./${HEALTH_FILE}`)) {
+            const content = fs.readFileSync(`./${HEALTH_FILE}`, 'utf8');
+            const parsedHealth = JSON.parse(content);
+            
+            healthStatus = {
+                lastCheckDate: parsedHealth.lastCheckDate || null,
+                lastCheckTime: parsedHealth.lastCheckTime || null,
+                nextCheckTime: parsedHealth.nextCheckTime || null,
+                endpoints: parsedHealth.endpoints || {},
+                summary: parsedHealth.summary || { online: 0, offline: 0, total: 0 }
+            };
+            
+            console.log(`[HEALTH] Loaded from local: ${healthStatus.summary.online}/${healthStatus.summary.total} online`);
+            return true;
+        }
+    } catch (error) {
+        console.error('[HEALTH] Failed to load from local:', error.message);
+    }
+    return false;
+}
+
+// ============================================
+// AUTO SAVE
+// ============================================
+
+function startAutoSave() {
+    setInterval(async () => {
+        saveStatsToLocal();
+        if (githubEnabled) {
+            await saveStatsToGitHub();
+            await saveHealthToGitHub();
+        }
+    }, 60000); // Every 1 minute
+    console.log('[SYSTEM] Auto-save started (every 1 minute)');
+}
+
+// ============================================
+// DAILY HEALTH CHECK SYSTEM
+// ============================================
+
+function getSriLankanTime() {
+    return new Date(new Date().toLocaleString("en-US", { timeZone: 'Asia/Colombo' }));
+}
+
+function formatSriLankanTime(date) {
+    return date.toLocaleString('en-US', { 
+        timeZone: 'Asia/Colombo',
+        month: 'short', day: 'numeric', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: true
+    });
+}
+
+function getNextCheckTime() {
+    const now = getSriLankanTime();
+    const nextCheck = new Date(now);
+    nextCheck.setHours(0, 0, 0, 0);
+    
+    // If we've passed 12:00 AM, next check is tomorrow
+    if (now.getHours() > 0 || (now.getHours() === 0 && now.getMinutes() > 0)) {
+        nextCheck.setDate(nextCheck.getDate() + 1);
+    }
+    
+    return nextCheck;
+}
+
+async function checkSingleEndpoint(endpoint) {
+    const baseUrl = `http://localhost:${process.env.PORT || 3000}`;
+    let testUrl = `${baseUrl}${endpoint.path}`;
+    
+    // Build query string from test params
+    if (endpoint.testParams) {
+        const params = new URLSearchParams(endpoint.testParams);
+        testUrl += '?' + params.toString();
+    }
+    
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+        
+        const response = await fetch(testUrl, { 
+            method: 'GET', 
+            signal: controller.signal,
+            headers: { 'Accept': 'application/json' }
+        });
+        
+        clearTimeout(timeoutId);
+        
+        let isOnline = false;
+        if (response.ok) {
+            try {
+                const data = await response.json();
+                // Check if response has status: true
+                if (data && data.status === true) {
+                    isOnline = true;
+                }
+            } catch (e) {
+                // If JSON parsing fails but response was OK, consider offline
+                isOnline = false;
+            }
+        }
+        
+        return {
+            name: endpoint.name,
+            path: endpoint.path,
+            status: isOnline ? 'online' : 'offline',
+            lastChecked: new Date().toISOString()
+        };
+        
+    } catch (error) {
+        return {
+            name: endpoint.name,
+            path: endpoint.path,
+            status: 'offline',
+            lastChecked: new Date().toISOString(),
+            error: error.message
+        };
+    }
+}
+
+async function performDailyHealthCheck(force = false) {
+    const now = getSriLankanTime();
+    const today = getSriLankanDateString();
+    
+    console.log(`[HEALTH CHECK] Starting check at ${formatSriLankanTime(now)}`);
+    
+    // Check if already done today (unless forced)
+    if (!force && healthStatus.lastCheckDate === today) {
+        console.log(`[HEALTH CHECK] Already completed today at ${healthStatus.lastCheckTime}`);
+        return healthStatus.summary;
+    }
+    
+    // Perform checks for all endpoints
+    const results = [];
+    for (const endpoint of ENDPOINTS_TO_CHECK) {
+        console.log(`[HEALTH CHECK] Checking ${endpoint.name}...`);
+        const result = await checkSingleEndpoint(endpoint);
+        results.push(result);
+        console.log(`[HEALTH CHECK] ${endpoint.name}: ${result.status}`);
+    }
+    
+    // Calculate summary
+    const online = results.filter(r => r.status === 'online').length;
+    const offline = results.filter(r => r.status === 'offline').length;
+    
+    // Update health status
+    healthStatus = {
+        lastCheckDate: today,
+        lastCheckTime: formatSriLankanTime(now),
+        nextCheckTime: formatSriLankanTime(getNextCheckTime()),
+        endpoints: results.reduce((acc, curr) => {
+            acc[curr.name] = curr;
+            return acc;
+        }, {}),
+        summary: {
+            online: online,
+            offline: offline,
+            total: results.length
+        }
+    };
+    
+    // Save to GitHub and local
+    saveHealthToLocal();
+    if (githubEnabled) {
+        await saveHealthToGitHub();
+    }
+    
+    console.log(`[HEALTH CHECK] ✅ Completed: ${online}/${results.length} online, ${offline} offline`);
+    
+    return healthStatus.summary;
+}
+
+function checkMissedHealthCheck() {
+    const now = getSriLankanTime();
+    const today = getSriLankanDateString();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    
+    // If it's after 12:00 AM and health check hasn't been done today, do it now
+    if (healthStatus.lastCheckDate !== today) {
+        // Check if we're in the "missed window" (12:00 AM to 1:00 AM)
+        // or if server was down during 12:00 AM
+        if (currentHour >= 0 && currentHour < 2) {
+            console.log(`[HEALTH CHECK] Missed 12:00 AM check detected, running now...`);
+            performDailyHealthCheck(true);
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+function startDailyHealthCheckScheduler() {
+    // Check immediately if we missed the 12 AM check (server was down)
+    const missed = checkMissedHealthCheck();
+    
+    if (!missed) {
+        console.log(`[HEALTH CHECK] Scheduler started. Last check: ${healthStatus.lastCheckDate || 'Never'}`);
+    }
+    
+    // Check every minute if it's time for the daily check
+    setInterval(() => {
+        const now = getSriLankanTime();
+        const today = getSriLankanDateString();
+        
+        // Check if it's 12:00 AM and we haven't checked today
+        if (now.getHours() === 0 && now.getMinutes() === 0) {
+            if (healthStatus.lastCheckDate !== today) {
+                console.log('[HEALTH CHECK] 12:00 AM - Starting daily check...');
+                performDailyHealthCheck();
+            }
+        }
+    }, 60000); // Check every minute
+    
+    // Also update next check time display every minute
+    setInterval(() => {
+        healthStatus.nextCheckTime = formatSriLankanTime(getNextCheckTime());
+        if (githubEnabled) saveHealthToGitHub();
+    }, 60000);
+}
+
+// ============================================
+// RATE LIMITING
+// ============================================
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: {
+    status: false,
+    message: "Too many requests from this IP, please try again later."
+  }
+});
+app.use('/download', limiter);
+app.use('/search', limiter);
+
+// ============================================
+// API CALL TRACKING MIDDLEWARE
+// ============================================
+
 app.use(['/download', '/search'], async (req, res, next) => {
     const path = req.path;
     const validEndpoints = ['/youtubedl', '/youtubedl2', '/tiktokdl', 
@@ -640,8 +665,9 @@ app.use(['/download', '/search'], async (req, res, next) => {
         const clientIp = req.headers['x-forwarded-for'] || req.ip || 'unknown';
         const fingerprint = getRequestFingerprint(clientIp, endpointName);
         
+        // Prevent double counting
         if (wasRecentlyCounted(fingerprint)) {
-            console.log(`[API CALL] ➜ ${endpointName} | SKIPPED (duplicate)`);
+            console.log(`[API CALL] ➜ ${endpointName} | SKIPPED (duplicate within 5s)`);
             return next();
         }
 
@@ -649,12 +675,14 @@ app.use(['/download', '/search'], async (req, res, next) => {
         stats.endpointCalls[endpointName] = (stats.endpointCalls[endpointName] || 0) + 1;
         stats.lastUpdated = new Date().toISOString();
 
+        // Track visitor
         const today = getTodayString();
         if (!stats.visitors[today]) stats.visitors[today] = {};
         const visitorHash = crypto.createHash('sha256').update(clientIp).digest('hex').substring(0, 16);
+        const isNewVisitor = !stats.visitors[today][visitorHash];
         stats.visitors[today][visitorHash] = new Date().toISOString();
 
-        console.log(`[API CALL] ➜ ${endpointName} | Total: ${stats.apiCalls}`);
+        console.log(`[API CALL] ➜ ${endpointName} | Total: ${stats.apiCalls} | New Visitor: ${isNewVisitor ? 'Yes' : 'No'}`);
 
         saveStatsToLocal();
         if (githubEnabled) saveStatsToGitHub().catch(() => {});
@@ -662,16 +690,23 @@ app.use(['/download', '/search'], async (req, res, next) => {
     next();
 });
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: { status: false, message: "Too many requests" }
-});
-app.use('/download', limiter);
-app.use('/search', limiter);
+// ============================================
+// HEALTH CHECK - Koyeb Optimized
+// ============================================
 
-// Stats endpoints
+app.get('/health', (req, res) => {
+  // Simple, fast response - no heavy operations
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
+// ============================================
+// STATS ENDPOINTS
+// ============================================
+
 app.get('/stats', (req, res) => {
   const today = getTodayString();
   const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
@@ -687,10 +722,24 @@ app.get('/stats', (req, res) => {
     totalVisitors: totalUniqueVisitors,
     endpointCalls: stats.endpointCalls,
     lastUpdated: stats.lastUpdated,
-    githubBackup: githubEnabled
+    githubBackup: githubEnabled,
+    timestamp: new Date().toISOString()
   });
 });
 
+// Health status endpoint for frontend
+app.get('/health/status', (req, res) => {
+    res.json({
+        lastCheckDate: healthStatus.lastCheckDate,
+        lastCheckTime: healthStatus.lastCheckTime,
+        nextCheckTime: healthStatus.nextCheckTime,
+        summary: healthStatus.summary,
+        endpoints: healthStatus.endpoints,
+        githubBackup: githubEnabled
+    });
+});
+
+// Frontend visitor tracking only (no API call tracking here)
 app.post('/stats/increment', (req, res) => {
   const { type, visitorId } = req.body;
   const today = getTodayString();
@@ -704,6 +753,7 @@ app.post('/stats/increment', (req, res) => {
     const isNewVisitor = !stats.visitors[today][visitorHash];
     stats.visitors[today][visitorHash] = new Date().toISOString();
     
+    // Clean old data (30 days)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     Object.keys(stats.visitors).forEach(date => {
@@ -717,12 +767,25 @@ app.post('/stats/increment', (req, res) => {
   }
 });
 
-// API Routes
+// Manual trigger for health check (for testing)
+app.post('/health/check', async (req, res) => {
+    const result = await performDailyHealthCheck(true);
+    res.json({
+        success: true,
+        message: 'Health check completed',
+        result: result
+    });
+});
+
+// ============================================
+// API ROUTES
+// ============================================
+
 app.get('/download/youtubedl', async (req, res) => {
   try {
     const url = req.query.url;
     if (!url || (!url.includes('youtube.com') && !url.includes('youtu.be'))) {
-      return res.status(400).json({ status: false, message: "Valid YouTube URL required" });
+      return res.status(400).json({ status: false, message: "Please provide a valid YouTube URL" });
     }
     const youtubeData = await youtubedl(url);
     res.json({ status: true, creator: "WALUKA🇱🇰", result: youtubeData });
@@ -736,7 +799,7 @@ app.get('/download/youtubedl2', async (req, res) => {
   try {
     const url = req.query.url;
     if (!url || !url.includes('youtu')) {
-      return res.status(400).json({ status: false, message: "Valid YouTube URL required" });
+      return res.status(400).json({ status: false, message: "Please provide a valid YouTube URL" });
     }
     const youtubeData = await youtubedl2(url);
     res.json({ status: true, creator: "WALUKA🇱🇰", result: youtubeData });
@@ -749,7 +812,7 @@ app.get('/download/youtubedl2', async (req, res) => {
 app.get('/download/tiktokdl', async (req, res) => {
   try {
     if (!req.query.url) {
-      return res.status(400).json({ success: false, message: "TikTok URL required" });
+      return res.status(400).json({ success: false, message: "Please provide a valid Tiktok URL" });
     }
     const tiktokData = await tiktokdl(req.query.url);
     res.json({ status: true, creator: "WALUKA🇱🇰", result: tiktokData });
@@ -761,10 +824,10 @@ app.get('/download/tiktokdl', async (req, res) => {
 app.get('/download/instagramdl', async (req, res) => {
   try {
     if (!req.query.url) {
-      return res.status(400).json({ success: false, message: "Instagram URL required" });
+      return res.status(400).json({ success: false, message: "Please provide a valid Instagram URL" });
     }
     const instagramData = await instagramdl(req.query.url);
-    res.json({ status: true, creator: "WALUKA🇱🇰", result: instagramData });
+    res.json({ status: true, creator: "WALUKA🇲🇰", result: instagramData });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -774,7 +837,7 @@ app.get('/search/freefire', async (req, res) => {
   try {
     const { region, uid } = req.query;
     if (!region || !uid) {
-      return res.status(400).json({ status: false, message: "Region and UID required" });
+      return res.status(400).json({ status: false, message: "Please provide both region and uid parameters" });
     }
     const playerData = await freefireinfo(region, uid);
     res.json({ status: true, creator: "WALUKA🇱🇰", result: playerData });
@@ -787,8 +850,11 @@ app.get('/search/freefire', async (req, res) => {
 app.get('/download/textphoto', async (req, res) => {
   try {
     const { url, text } = req.query;
-    if (!url || !text) {
-      return res.status(400).json({ status: false, message: "URL and text required" });
+    if (!url) {
+      return res.status(400).json({ status: false, message: "Please provide a URL parameter" });
+    }
+    if (!text) {
+      return res.status(400).json({ status: false, message: "Please provide a text parameter" });
     }
     const result = await maker(url, text);
     res.json({ status: true, creator: "WALUKA🇱🇰", result: result });
@@ -797,19 +863,32 @@ app.get('/download/textphoto', async (req, res) => {
   }
 });
 
-// Static files
+// ============================================
+// STATIC FILES
+// ============================================
+
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Error handling
+// ============================================
+// ERROR HANDLING
+// ============================================
+
 app.use((req, res) => {
   res.status(404).json({
     status: false,
     message: "Endpoint not found",
-    availableEndpoints: ENDPOINTS_CONFIG.map(e => e.path)
+    availableEndpoints: [
+      "/download/youtubedl",
+      "/download/youtubedl2", 
+      "/download/tiktokdl",
+      "/download/instagramdl",
+      "/download/textphoto",
+      "/search/freefire"
+    ]
   });
 });
 
@@ -817,12 +896,13 @@ app.use((err, req, res, next) => {
   console.error('Server Error:', err);
   res.status(500).json({
     status: false,
-    message: "Internal server error"
+    message: "Internal server error",
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
 });
 
 // ============================================
-// START SERVER
+// START SERVER - Koyeb Optimized
 // ============================================
 
 const PORT = process.env.PORT || 3000;
@@ -830,25 +910,20 @@ const PORT = process.env.PORT || 3000;
 async function startServer() {
     console.log('[STARTUP] Starting SRI API V3.0...');
     
-    // Load stats
+    // Load stats from GitHub or local
     const githubLoaded = await loadStatsFromGitHub();
     if (!githubLoaded) loadStatsFromLocal();
     
-    // Load health status
+    // Load health status from GitHub or local
     await loadHealthFromGitHub();
     
-    // Check if health check needed on startup
-    await checkHealthOnStartup();
+    // Start auto-save
+    startAutoSave();
     
-    // Start scheduler
-    startHealthCheckScheduler();
+    // Start daily health check scheduler
+    startDailyHealthCheckScheduler();
     
-    // Auto-save stats
-    setInterval(async () => {
-        saveStatsToLocal();
-        if (githubEnabled) await saveStatsToGitHub();
-    }, 60000);
-    
+    // IMPORTANT: Bind to 0.0.0.0 for Koyeb
     app.listen(PORT, '0.0.0.0', () => {
         const today = getTodayString();
         const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
@@ -857,10 +932,23 @@ async function startServer() {
 ╔══════════════════════════════════════════╗
 ║           SRI API V3.0                   ║
 ║       Server running on port ${PORT}        ║
+║   URL: http://0.0.0.0:${PORT}             ║
 ║                                          ║
-║  Stats: ${stats.apiCalls} calls, ${todayVisitors} visitors    ║
-║  Health: ${healthStatus.summary.online}/${healthStatus.summary.total} endpoints online    ║
-║  GitHub: ${githubEnabled ? 'ENABLED ✅' : 'DISABLED ❌'}      ║
+║  Stats: ${stats.apiCalls} calls, ${todayVisitors} visitors today    ║
+║  Health: ${healthStatus.summary.online}/${healthStatus.summary.total} online              ║
+║  GitHub Backup: ${githubEnabled ? 'ENABLED ✅' : 'DISABLED ❌'}      ║
+║  Local Backup: ENABLED ✅                ║
+║                                          ║
+║  Endpoints:                              ║
+║  • /download/youtubedl                   ║
+║  • /download/youtubedl2                  ║
+║  • /download/tiktokdl                    ║
+║  • /download/instagramdl                 ║
+║  • /download/textphoto                   ║
+║  • /search/freefire                      ║
+║                                          ║
+║  Health: /health                         ║
+║  Stats:   /stats                         ║
 ╚══════════════════════════════════════════╝
         `);
     });
