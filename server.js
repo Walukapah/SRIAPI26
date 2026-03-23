@@ -322,7 +322,7 @@ function loadHealthFromLocal() {
 async function checkSingleEndpoint(endpointConfig) {
     const baseUrl = `http://localhost:${process.env.PORT || 3000}`;
     let testUrl = `${baseUrl}${endpointConfig.path}`;
-    
+
     // Add dummy params if needed
     if (endpointConfig.path === '/download/youtubedl' || endpointConfig.path === '/download/youtubedl2') {
         testUrl += '?url=https://youtube.com/watch?v=dQw4w9WgXcQ';
@@ -337,7 +337,7 @@ async function checkSingleEndpoint(endpointConfig) {
     }
 
     const startTime = Date.now();
-    
+
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
@@ -347,35 +347,52 @@ async function checkSingleEndpoint(endpointConfig) {
             signal: controller.signal,
             headers: { 'Accept': 'application/json' }
         });
-        
+
         clearTimeout(timeoutId);
         const responseTime = Date.now() - startTime;
 
         let isOnline = false;
+        let apiStatus = null;
+
         if (response.ok) {
             try {
                 const data = await response.json();
-                // Check if response has expected structure
-                if (data && (data.status === true || data.status === false)) {
+                apiStatus = data.status;
+
+                // ✅ FIXED: API is ONLINE only if response has {"status": true}
+                // OFFLINE if {"status": false}, null, undefined, or any other value
+                if (data && data.status === true) {
                     isOnline = true;
+                    console.log(`[HEALTH] ✅ ${endpointConfig.name}: ONLINE (status: true)`);
+                } else {
+                    isOnline = false;
+                    console.log(`[HEALTH] ❌ ${endpointConfig.name}: OFFLINE (status: ${data?.status})`);
                 }
             } catch (e) {
-                // If not JSON but response is OK, consider online
-                isOnline = true;
+                // Invalid JSON = OFFLINE
+                isOnline = false;
+                console.log(`[HEALTH] ❌ ${endpointConfig.name}: OFFLINE (invalid JSON response)`);
             }
+        } else {
+            // HTTP error = OFFLINE
+            isOnline = false;
+            console.log(`[HEALTH] ❌ ${endpointConfig.name}: OFFLINE (HTTP ${response.status})`);
         }
 
         return {
             status: isOnline ? 'online' : 'offline',
             responseTime: responseTime,
-            error: null
+            error: null,
+            apiStatus: apiStatus
         };
 
     } catch (error) {
+        console.log(`[HEALTH] ❌ ${endpointConfig.name}: OFFLINE (error: ${error.message})`);
         return {
             status: 'offline',
             responseTime: Date.now() - startTime,
-            error: error.message
+            error: error.message,
+            apiStatus: null
         };
     }
 }
