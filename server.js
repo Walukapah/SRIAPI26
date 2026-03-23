@@ -1,4 +1,4 @@
-// server.js - Koyeb Optimized with GitHub Stats & Daily Health Check
+// server.js - Koyeb Optimized with Fixed Health Check & Website URL
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -26,6 +26,43 @@ app.set('json spaces', 2);
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// ============================================
+// WEBSITE URL CONFIGURATION
+// ============================================
+
+function getWebsiteUrl() {
+    // Priority: Environment variable > Koyeb automatic detection > Fallback
+    if (process.env.WEBSITE_URL) {
+        return process.env.WEBSITE_URL;
+    }
+    
+    // Koyeb provides this environment variable
+    if (process.env.KOYEB_PUBLIC_DOMAIN) {
+        return `https://${process.env.KOYEB_PUBLIC_DOMAIN}`;
+    }
+    
+    // Koyeb app URL format
+    if (process.env.KOYEB_APP_NAME) {
+        return `https://${process.env.KOYEB_APP_NAME}.koyeb.app`;
+    }
+    
+    // Railway, Render, etc.
+    if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+        return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
+    }
+    
+    if (process.env.RENDER_EXTERNAL_URL) {
+        return process.env.RENDER_EXTERNAL_URL;
+    }
+    
+    // Default fallback
+    const port = process.env.PORT || 3000;
+    return `http://localhost:${port}`;
+}
+
+const WEBSITE_URL = getWebsiteUrl();
+console.log(`[CONFIG] Website URL: ${WEBSITE_URL}`);
 
 // ============================================
 // GITHUB CONFIGURATION
@@ -57,7 +94,7 @@ if (GITHUB_TOKEN && GITHUB_TOKEN.length > 10 && !GITHUB_TOKEN.includes('your')) 
     console.warn('[GITHUB] GITHUB_TOKEN not set, too short, or contains placeholder text');
 }
 
-const STATS_FILE = 'api_stats1.json';
+const STATS_FILE = 'api_stats.json';
 const HEALTH_FILE = 'api_health.json';
 
 // ============================================
@@ -452,7 +489,7 @@ function startAutoSave() {
 }
 
 // ============================================
-// DAILY HEALTH CHECK SYSTEM
+// DAILY HEALTH CHECK SYSTEM - FIXED
 // ============================================
 
 function getSriLankanTime() {
@@ -481,14 +518,16 @@ function getNextCheckTime() {
 }
 
 async function checkSingleEndpoint(endpoint) {
-    const baseUrl = `http://localhost:${process.env.PORT || 3000}`;
-    let testUrl = `${baseUrl}${endpoint.path}`;
+    // Use WEBSITE_URL instead of localhost
+    let testUrl = `${WEBSITE_URL}${endpoint.path}`;
     
     // Build query string from test params
     if (endpoint.testParams) {
         const params = new URLSearchParams(endpoint.testParams);
         testUrl += '?' + params.toString();
     }
+    
+    console.log(`[HEALTH CHECK] Testing: ${endpoint.name} at ${testUrl}`);
     
     try {
         const controller = new AbortController();
@@ -503,9 +542,12 @@ async function checkSingleEndpoint(endpoint) {
         clearTimeout(timeoutId);
         
         let isOnline = false;
+        let responseData = null;
+        
         if (response.ok) {
             try {
                 const data = await response.json();
+                responseData = data;
                 // Check if response has status: true
                 if (data && data.status === true) {
                     isOnline = true;
@@ -516,14 +558,19 @@ async function checkSingleEndpoint(endpoint) {
             }
         }
         
+        console.log(`[HEALTH CHECK] ${endpoint.name}: ${isOnline ? 'ONLINE ✅' : 'OFFLINE ❌'} (status: ${response.status})`);
+        
         return {
             name: endpoint.name,
             path: endpoint.path,
             status: isOnline ? 'online' : 'offline',
-            lastChecked: new Date().toISOString()
+            lastChecked: new Date().toISOString(),
+            responseStatus: response.status,
+            hasStatusTrue: responseData ? responseData.status === true : false
         };
         
     } catch (error) {
+        console.log(`[HEALTH CHECK] ${endpoint.name}: OFFLINE ❌ (${error.message})`);
         return {
             name: endpoint.name,
             path: endpoint.path,
@@ -539,6 +586,7 @@ async function performDailyHealthCheck(force = false) {
     const today = getSriLankanDateString();
     
     console.log(`[HEALTH CHECK] Starting check at ${formatSriLankanTime(now)}`);
+    console.log(`[HEALTH CHECK] Today: ${today}, Last check: ${healthStatus.lastCheckDate}`);
     
     // Check if already done today (unless forced)
     if (!force && healthStatus.lastCheckDate === today) {
@@ -549,10 +597,8 @@ async function performDailyHealthCheck(force = false) {
     // Perform checks for all endpoints
     const results = [];
     for (const endpoint of ENDPOINTS_TO_CHECK) {
-        console.log(`[HEALTH CHECK] Checking ${endpoint.name}...`);
         const result = await checkSingleEndpoint(endpoint);
         results.push(result);
-        console.log(`[HEALTH CHECK] ${endpoint.name}: ${result.status}`);
     }
     
     // Calculate summary
@@ -592,6 +638,8 @@ function checkMissedHealthCheck() {
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
     
+    console.log(`[HEALTH CHECK] Checking missed check: today=${today}, lastCheck=${healthStatus.lastCheckDate}, hour=${currentHour}`);
+    
     // If it's after 12:00 AM and health check hasn't been done today, do it now
     if (healthStatus.lastCheckDate !== today) {
         // Check if we're in the "missed window" (12:00 AM to 1:00 AM)
@@ -606,6 +654,9 @@ function checkMissedHealthCheck() {
     return false;
 }
 
+let healthCheckInterval = null;
+let nextCheckUpdateInterval = null;
+
 function startDailyHealthCheckScheduler() {
     // Check immediately if we missed the 12 AM check (server was down)
     const missed = checkMissedHealthCheck();
@@ -614,8 +665,12 @@ function startDailyHealthCheckScheduler() {
         console.log(`[HEALTH CHECK] Scheduler started. Last check: ${healthStatus.lastCheckDate || 'Never'}`);
     }
     
+    // Clear any existing intervals
+    if (healthCheckInterval) clearInterval(healthCheckInterval);
+    if (nextCheckUpdateInterval) clearInterval(nextCheckUpdateInterval);
+    
     // Check every minute if it's time for the daily check
-    setInterval(() => {
+    healthCheckInterval = setInterval(() => {
         const now = getSriLankanTime();
         const today = getSriLankanDateString();
         
@@ -629,10 +684,12 @@ function startDailyHealthCheckScheduler() {
     }, 60000); // Check every minute
     
     // Also update next check time display every minute
-    setInterval(() => {
+    nextCheckUpdateInterval = setInterval(() => {
         healthStatus.nextCheckTime = formatSriLankanTime(getNextCheckTime());
         if (githubEnabled) saveHealthToGitHub();
     }, 60000);
+    
+    console.log('[HEALTH CHECK] Scheduler active - checking every minute for 12:00 AM');
 }
 
 // ============================================
@@ -735,7 +792,8 @@ app.get('/health/status', (req, res) => {
         nextCheckTime: healthStatus.nextCheckTime,
         summary: healthStatus.summary,
         endpoints: healthStatus.endpoints,
-        githubBackup: githubEnabled
+        githubBackup: githubEnabled,
+        websiteUrl: WEBSITE_URL
     });
 });
 
@@ -827,7 +885,7 @@ app.get('/download/instagramdl', async (req, res) => {
       return res.status(400).json({ success: false, message: "Please provide a valid Instagram URL" });
     }
     const instagramData = await instagramdl(req.query.url);
-    res.json({ status: true, creator: "WALUKA🇲🇰", result: instagramData });
+    res.json({ status: true, creator: "WALUKA🇱🇰", result: instagramData });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -909,6 +967,7 @@ const PORT = process.env.PORT || 3000;
 
 async function startServer() {
     console.log('[STARTUP] Starting SRI API V3.0...');
+    console.log(`[CONFIG] Environment: ${process.env.NODE_ENV || 'development'}`);
     
     // Load stats from GitHub or local
     const githubLoaded = await loadStatsFromGitHub();
@@ -920,19 +979,28 @@ async function startServer() {
     // Start auto-save
     startAutoSave();
     
-    // Start daily health check scheduler
-    startDailyHealthCheckScheduler();
-    
     // IMPORTANT: Bind to 0.0.0.0 for Koyeb
-    app.listen(PORT, '0.0.0.0', () => {
+    app.listen(PORT, '0.0.0.0', async () => {
         const today = getTodayString();
         const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
+        
+        // Perform initial health check if never checked or missed
+        const now = getSriLankanTime();
+        const todaySL = getSriLankanDateString();
+        
+        if (!healthStatus.lastCheckDate || healthStatus.lastCheckDate !== todaySL) {
+            console.log('[STARTUP] Running initial health check...');
+            await performDailyHealthCheck(true);
+        }
+        
+        // Start daily scheduler
+        startDailyHealthCheckScheduler();
         
         console.log(`
 ╔══════════════════════════════════════════╗
 ║           SRI API V3.0                   ║
 ║       Server running on port ${PORT}        ║
-║   URL: http://0.0.0.0:${PORT}             ║
+║   URL: ${WEBSITE_URL.padEnd(28)}      ║
 ║                                          ║
 ║  Stats: ${stats.apiCalls} calls, ${todayVisitors} visitors today    ║
 ║  Health: ${healthStatus.summary.online}/${healthStatus.summary.total} online              ║
