@@ -9,7 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root { --bg-primary: #fafafa; --bg-secondary: #ffffff; --text-primary: #000000; --text-secondary: #666666; --border: #e5e5e5; --accent: #000000; --hover: #f5f5f5; --code-bg: #0a0a0a; --success: #22c55e; --error: #ef4444; --warning: #f59e0b; --unknown: #9ca3af; --sidebar-width: 320px; }
+        :root { --bg-primary: #fafafa; --bg-secondary: #ffffff; --text-primary: #000000; --text-secondary: #666666; --border: #e5e5e5; --accent: #000000; --hover: #f5f5f5; --code-bg: #0a0a0a; --success: #22c55e; --error: #ef4444; --warning: #f59e0b; --sidebar-width: 320px; }
         html { scroll-behavior: smooth; }
         body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg-primary); color: var(--text-primary); line-height: 1.6; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
         .dot-pattern { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-image: radial-gradient(circle, #d4d4d4 1px, transparent 1px); background-size: 24px 24px; opacity: 0.5; pointer-events: none; z-index: 0; }
@@ -22,13 +22,27 @@
         .nav-logo:hover { opacity: 0.7; }
         .nav-logo-icon { width: 32px; height: 32px; background: var(--accent); color: white; display: flex; align-items: center; justify-content: center; border-radius: 8px; font-size: 14px; }
         .nav-right { display: flex; align-items: center; gap: 16px; }
+        
         .nav-stats { display: flex; align-items: center; gap: 12px; }
         .stat-item { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 100px; font-size: 12px; font-weight: 600; color: var(--text-secondary); transition: all 0.2s; }
         .stat-item:hover { background: var(--hover); border-color: var(--accent); color: var(--text-primary); }
         .stat-icon { width: 14px; height: 14px; color: var(--accent); }
         .stat-value { color: var(--accent); font-family: 'JetBrains Mono', monospace; font-weight: 700; }
-        @media (max-width: 768px) { .navbar { padding: 0 12px; } .nav-stats { gap: 8px; } .stat-item { padding: 4px 8px; font-size: 11px; border-radius: 8px; } .stat-icon { width: 12px; height: 12px; } .stat-value { font-size: 11px; } .stat-item span:last-child { display: none; } }
-        @media (max-width: 380px) { .nav-logo span { display: none; } .stat-item { padding: 4px 6px; } }
+        
+        @media (max-width: 768px) { 
+            .navbar { padding: 0 12px; }
+            .nav-stats { gap: 8px; }
+            .stat-item { padding: 4px 8px; font-size: 11px; border-radius: 8px; }
+            .stat-icon { width: 12px; height: 12px; }
+            .stat-value { font-size: 11px; }
+            .stat-item span:last-child { display: none; }
+        }
+        
+        @media (max-width: 380px) {
+            .nav-logo span { display: none; }
+            .stat-item { padding: 4px 6px; }
+        }
+        
         .sidebar { position: fixed; top: 64px; left: 0; width: var(--sidebar-width); height: calc(100vh - 64px); background: var(--bg-secondary); border-right: 1px solid var(--border); overflow-y: auto; z-index: 999; transform: translateX(-100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); display: flex; flex-direction: column; }
         .sidebar.active { transform: translateX(0); }
         .sidebar-overlay { position: fixed; top: 64px; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.3); opacity: 0; visibility: hidden; transition: all 0.3s; z-index: 998; }
@@ -37,6 +51,10 @@
         .sidebar-search-input { width: 100%; padding: 12px 16px; border: 1px solid var(--border); border-radius: 12px; font-size: 14px; background: var(--bg-primary); transition: all 0.2s; }
         .sidebar-search-input:focus { outline: none; border-color: var(--accent); background: var(--bg-secondary); }
         .sidebar-search-input::placeholder { color: var(--text-secondary); }
+        .search-clear { position: absolute; right: 28px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; border: none; background: var(--border); border-radius: 50%; cursor: pointer; display: none; align-items: center; justify-content: center; font-size: 12px; color: var(--text-secondary); }
+        .search-clear.visible { display: flex; }
+        .search-clear:hover { background: var(--text-secondary); color: white; }
+        .sidebar-search-wrapper { position: relative; }
         .sidebar-content { flex: 1; overflow-y: auto; padding: 16px 0; }
         .sidebar-section { margin-bottom: 8px; }
         .sidebar-section-title { padding: 8px 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-secondary); display: flex; align-items: center; justify-content: space-between; }
@@ -58,9 +76,7 @@
         .status-online { background: var(--success); }
         .status-online::after { background: var(--success); }
         .status-offline { background: var(--error); }
-        .status-offline::after { background: var(--error); animation: none; }
-        .status-unknown { background: var(--unknown); }
-        .status-unknown::after { animation: none; }
+        .status-offline::after { background: var(--error); }
         .status-checking { background: var(--warning); }
         .status-checking::after { background: var(--warning); animation: pulse 1s ease-out infinite; }
         @keyframes pulse { 0% { transform: translate(-50%, -50%) scale(1); opacity: 0.8; } 100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; } }
@@ -223,43 +239,25 @@
         .toast { position: fixed; bottom: 24px; right: 24px; background: var(--accent); color: white; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 500; transform: translateY(100px); opacity: 0; transition: all 0.3s; z-index: 9999; }
         @media (max-width: 480px) { .toast { left: 16px; right: 16px; bottom: 16px; text-align: center; } }
         .toast.show { transform: translateY(0); opacity: 1; }
+        .base-url-display { position: fixed; bottom: 80px; right: 24px; background: var(--bg-secondary); border: 1px solid var(--border); padding: 12px 16px; border-radius: 8px; font-size: 12px; color: var(--text-secondary); z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        @media (max-width: 768px) { .base-url-display { display: none; } }
+        .base-url-display strong { color: var(--text-primary); display: block; margin-bottom: 4px; }
         .kbd { display: inline-block; padding: 2px 6px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; color: var(--text-secondary); }
         .category-header { display: flex; align-items: center; gap: 12px; margin: 32px 0 16px; padding-bottom: 12px; border-bottom: 2px solid var(--border); }
         .category-header:first-child { margin-top: 0; }
         .category-title { font-size: 18px; font-weight: 700; color: var(--text-primary); }
         .category-count { font-size: 12px; color: var(--text-secondary); background: var(--bg-primary); padding: 4px 10px; border-radius: 100px; }
         
-        /* Health Check Panel - Updated */
-        .health-check-panel { position: fixed; bottom: 24px; right: 24px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 16px; padding: 20px; z-index: 100; box-shadow: 0 8px 32px rgba(0,0,0,0.12); min-width: 300px; max-width: 350px; transition: all 0.3s ease; }
-        @media (max-width: 768px) { .health-check-panel { left: 16px; right: 16px; bottom: 16px; min-width: auto; max-width: none; } }
-        .health-check-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
-        .health-check-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; }
-        .health-check-status { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; margin-bottom: 12px; padding: 12px; background: var(--bg-primary); border-radius: 10px; }
-        .health-check-summary { display: flex; gap: 12px; margin-bottom: 12px; }
-        .health-summary-item { flex: 1; text-align: center; padding: 10px; background: var(--bg-primary); border-radius: 8px; }
-        .health-summary-value { font-size: 20px; font-weight: 800; color: var(--accent); display: block; }
-        .health-summary-label { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
-        .health-check-time { font-size: 12px; color: var(--text-secondary); margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+        .health-check-panel { position: fixed; bottom: 24px; right: 24px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; padding: 16px; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.1); min-width: 220px; }
+        @media (max-width: 768px) { .health-check-panel { display: none; } }
+        .health-check-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+        .health-check-status { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 8px; }
+        .health-check-time { font-size: 11px; color: var(--text-secondary); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
         .health-check-next { font-size: 11px; color: var(--text-secondary); margin-top: 6px; font-style: italic; }
-        .health-endpoints { margin-top: 12px; max-height: 180px; overflow-y: auto; border-top: 1px solid var(--border); padding-top: 12px; }
-        .health-endpoint-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; font-size: 12px; border-bottom: 1px solid var(--border); }
-        .health-endpoint-item:last-child { border-bottom: none; }
-        .health-endpoint-name { display: flex; align-items: center; gap: 8px; color: var(--text-primary); font-weight: 500; }
-        .health-endpoint-status { font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
-        .status-text-online { color: var(--success); }
-        .status-text-offline { color: var(--error); }
-        .status-text-unknown { color: var(--unknown); }
-        .refresh-btn { width: 32px; height: 32px; border: 1px solid var(--border); background: var(--bg-primary); border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; color: var(--text-secondary); }
-        .refresh-btn:hover { background: var(--hover); color: var(--text-primary); border-color: var(--accent); }
-        .refresh-btn.spinning { animation: spin 1s linear infinite; }
-        .health-check-loading { text-align: center; padding: 20px; color: var(--text-secondary); font-size: 13px; }
-        .health-error { color: var(--error); font-size: 12px; margin-top: 8px; }
-        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
     <div class="dot-pattern"></div>
-    
     <nav class="navbar">
         <div class="nav-left">
             <button class="menu-toggle" onclick="toggleSidebar()">
@@ -292,24 +290,27 @@
             </div>
         </div>
     </nav>
-
     <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
-    
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-search">
-            <input type="text" class="sidebar-search-input" id="sidebarSearchInput" placeholder="Filter endpoints..." autocomplete="off">
+            <div class="sidebar-search-wrapper">
+                <input type="text" class="sidebar-search-input" id="sidebarSearchInput" placeholder="Filter endpoints..." autocomplete="off">
+                <button class="search-clear" id="sidebarSearchClear" onclick="clearSidebarSearch()">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
         </div>
         <div class="sidebar-content" id="sidebarContent"></div>
         <div class="sidebar-footer">Press <span class="kbd">/</span> to search - <span class="kbd">Esc</span> to close</div>
     </aside>
-
     <main class="main-content">
-        <!-- Home Section -->
         <section class="hero" id="homeSection">
             <div class="version-badge"><span>SRI API V3.0</span></div>
             <h1 class="hero-title">PURE<br><span class="outline">SYSTEM</span></h1>
             <p class="hero-description">A minimal, monochromatic registry for high-performance APIs. <strong>No noise. Just data.</strong></p>
-            
             <div class="home-search-container">
                 <div class="home-search-box">
                     <div class="home-search-input-wrapper">
@@ -328,7 +329,6 @@
                     </div>
                 </div>
             </div>
-
             <div class="hero-buttons" id="heroButtons">
                 <button class="btn btn-primary" onclick="showAllApis()">
                     Browse All
@@ -344,8 +344,6 @@
                 </a>
             </div>
         </section>
-
-        <!-- Search Results -->
         <section class="search-results-section" id="searchResultsSection">
             <div class="search-results-header">
                 <span class="search-results-title">Search Results</span>
@@ -353,8 +351,6 @@
             </div>
             <div class="search-results-grid" id="searchResultsGrid"></div>
         </section>
-
-        <!-- API List -->
         <section class="api-section" id="apiListSection">
             <div class="section-header">
                 <button class="back-btn" onclick="showHome()">
@@ -367,8 +363,6 @@
             </div>
             <div id="endpointsList"></div>
         </section>
-
-        <!-- Endpoint Detail -->
         <section class="endpoint-detail" id="endpointDetail">
             <div class="detail-header">
                 <button class="back-btn" onclick="goBackFromDetail()">
@@ -383,7 +377,6 @@
                 </div>
                 <h1 class="detail-title" id="detailTitle">Endpoint Name</h1>
                 <p class="detail-description" id="detailDescription">Endpoint description goes here.</p>
-                
                 <div class="url-label">Endpoint URL</div>
                 <div class="url-box">
                     <div class="url-content" id="endpointUrl">https://api.example.com/endpoint</div>
@@ -395,7 +388,6 @@
                     </button>
                 </div>
             </div>
-
             <div class="params-section" id="paramsSection">
                 <h3 class="section-subtitle">Parameters</h3>
                 <table class="params-table">
@@ -403,7 +395,6 @@
                     <tbody id="paramsTableBody"></tbody>
                 </table>
             </div>
-
             <div class="test-section">
                 <div class="test-title">Test Endpoint</div>
                 <div class="test-inputs" id="testInputs"></div>
@@ -424,7 +415,6 @@
                     </button>
                 </div>
             </div>
-
             <div class="response-section" id="responseSection">
                 <div class="response-header">
                     <div class="response-status" id="responseStatus"><span class="loading"></span>Sending Request...</div>
@@ -441,7 +431,6 @@
                     <pre class="response-content" id="responseContent">Waiting for request...</pre>
                 </div>
             </div>
-
             <div class="code-block">
                 <div class="code-header">
                     <div class="code-tabs">
@@ -460,44 +449,39 @@
                 <div class="code-content" id="codeContent"></div>
             </div>
         </section>
-
         <footer class="footer">
             <p>Built with precision by <strong>WALUKA🇱🇰</strong></p>
             <p style="margin-top: 8px; font-size: 12px;">SRI API V3.0 © 2024</p>
         </footer>
     </main>
-
-    <!-- Health Check Panel - Updated Version -->
+    <div class="toast" id="toast">Copied to clipboard!</div>
+    
     <div class="health-check-panel" id="healthCheckPanel">
-        <div class="health-check-header">
-            <div class="health-check-title">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                </svg>
-                System Health
-            </div>
-            <button class="refresh-btn" id="refreshHealthBtn" onclick="refreshHealthStatus()" title="Refresh Status">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="23 4 23 10 17 10"></polyline>
-                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                </svg>
-            </button>
+        <div class="health-check-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+            Daily Health Check
         </div>
-        
-        <div id="healthCheckContent">
-            <div class="health-check-loading">
-                <span class="loading" style="width: 16px; height: 16px; border-color: var(--border); border-top-color: var(--accent);"></span>
-                Loading health status...
-            </div>
+        <div class="health-check-status" id="healthCheckStatus">
+            <span class="status-indicator status-checking"></span>
+            <span>Loading...</span>
         </div>
+        <div class="health-check-time" id="healthCheckTime">Last checked: --</div>
+        <div class="health-check-next" id="healthCheckNext">Next check: Today at 12:00 AM</div>
     </div>
 
-    <div class="toast" id="toast">Copied to clipboard!</div>
-
-    <script>
+<script>
+        // ============================================
+        // CONFIGURATION - Backend URL
+        // ============================================
         const BACKEND_URL = window.location.origin;
 
+        // ============================================
+        // API DATA - Static configuration only
+        // Status is loaded from backend /health/status
+        // ============================================
         const apiData = {
             download: {
                 title: "Download",
@@ -506,7 +490,7 @@
                     { name: "YouTube Downloader", path: "/download/youtubedl", method: "GET", description: "Download YouTube videos in multiple formats and qualities using ytsave.to API integration.", params: [{ name: "url", type: "string", required: true, description: "YouTube video URL (youtube.com or youtu.be)", placeholder: "https://youtube.com/watch?v=dQw4w9WgXcQ" }] },
                     { name: "YouTube Downloader V2", path: "/download/youtubedl2", method: "GET", description: "Alternative YouTube downloader using ytdown.to API with enhanced format support.", params: [{ name: "url", type: "string", required: true, description: "YouTube video URL", placeholder: "https://youtube.com/watch?v=dQw4w9WgXcQ" }] },
                     { name: "TikTok Downloader", path: "/download/tiktokdl", method: "GET", description: "Download TikTok videos without watermark, with metadata and music extraction support.", params: [{ name: "url", type: "string", required: true, description: "TikTok video URL (tiktok.com or vm.tiktok.com)", placeholder: "https://vt.tiktok.com/ZSuYLQkMm/" }] },
-                    { name: "Instagram Downloader", path: "/download/instagramdl", method: "GET", description: "Download Instagram videos, reels, and images with thumbnail extraction.", params: [{ name: "url", type: "string", required: true, description: "Instagram post/reel URL", placeholder: "https://www.instagram.com/reel/DKR-FW1yo_p/" }] },
+                    { name: "Instagram Downloader", path: "/download/instagramdl", method: "GET", description: "Download Instagram videos, reels, and images with thumbnail extraction.", params: [{ name: "url", type: "string", required: true, description: "Instagram post/reel URL", placeholder: "https://www.instagram.com/reel/DKR-FW1yo_p/?igsh=eG05NTh3MnUxcnE3" }] },
                     { name: "Text to Photo", path: "/download/textphoto", method: "GET", description: "Generate stylized text images using ephoto360, photooxy, and textpro templates.", params: [{ name: "url", type: "string", required: true, description: "Template URL from ephoto360.com, photooxy.com, or textpro.me", placeholder: "https://textpro.me/create-naruto-logo-style-text-effect-online-1125.html" }, { name: "text", type: "string", required: true, description: "First text parameter", placeholder: "SRI API W" }] }
                 ]
             },
@@ -520,173 +504,11 @@
         };
 
         let currentCategory = null, currentEndpoint = null, currentResponse = null, currentTab = 'curl', sidebarSearchQuery = '', isShowingAllApis = false;
-        let healthData = null;
 
         // ============================================
-        // HEALTH CHECK SYSTEM - FROM BACKEND
+        // STATS SYSTEM - Prevent Double Counting
         // ============================================
-
-        async function loadHealthStatus() {
-            try {
-                console.log('[HEALTH] Loading status from backend...');
-                const response = await fetch(`${BACKEND_URL}/health/status`);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-                
-                healthData = await response.json();
-                console.log('[HEALTH] Loaded:', healthData);
-                
-                renderHealthPanel();
-                updateSidebarWithHealthData();
-                return true;
-                
-            } catch (error) {
-                console.error('[HEALTH] Failed to load:', error);
-                renderHealthError(error.message);
-                return false;
-            }
-        }
-
-        function renderHealthPanel() {
-            if (!healthData) return;
-            
-            const container = document.getElementById('healthCheckContent');
-            const { summary, lastCheck, nextCheck, isChecking, endpoints } = healthData;
-            
-            // Determine overall status
-            let statusClass = 'status-unknown';
-            let statusText = 'Unknown';
-            
-            if (isChecking) {
-                statusClass = 'status-checking';
-                statusText = 'Checking...';
-            } else if (summary.online === summary.total && summary.total > 0) {
-                statusClass = 'status-online';
-                statusText = 'All Systems Operational';
-            } else if (summary.offline === summary.total) {
-                statusClass = 'status-offline';
-                statusText = 'All Systems Down';
-            } else if (summary.online > 0) {
-                statusClass = 'status-online'; // or 'status-partial' if you have that class
-                statusText = `${summary.online}/${summary.total} Online`;
-            }
-            
-            // Format times
-            const lastCheckStr = lastCheck ? formatDateTime(new Date(lastCheck)) : 'Never';
-            const nextCheckStr = nextCheck ? formatDateTime(new Date(nextCheck)) : 'Unknown';
-            
-            // Build endpoints list
-            let endpointsHtml = '';
-            if (endpoints && Object.keys(endpoints).length > 0) {
-                endpointsHtml = '<div class="health-endpoints">';
-                Object.entries(endpoints).forEach(([path, data]) => {
-                    const status = data.status || 'unknown';
-                    const statusText = status === 'online' ? 'Online' : 
-                                      status === 'offline' ? 'Offline' : 'Unknown';
-                    const statusTextClass = `status-text-${status}`;
-                    
-                    endpointsHtml += `
-                        <div class="health-endpoint-item">
-                            <div class="health-endpoint-name">
-                                <span class="status-indicator status-${status}"></span>
-                                ${data.name}
-                            </div>
-                            <span class="health-endpoint-status ${statusTextClass}">${statusText}</span>
-                        </div>
-                    `;
-                });
-                endpointsHtml += '</div>';
-            }
-            
-            container.innerHTML = `
-                <div class="health-check-status">
-                    <span class="status-indicator ${statusClass}"></span>
-                    <span>${statusText}</span>
-                </div>
-                
-                <div class="health-check-summary">
-                    <div class="health-summary-item">
-                        <span class="health-summary-value" style="color: var(--success);">${summary.online}</span>
-                        <div class="health-summary-label">Online</div>
-                    </div>
-                    <div class="health-summary-item">
-                        <span class="health-summary-value" style="color: var(--error);">${summary.offline}</span>
-                        <div class="health-summary-label">Offline</div>
-                    </div>
-                    <div class="health-summary-item">
-                        <span class="health-summary-value">${summary.total}</span>
-                        <div class="health-summary-label">Total</div>
-                    </div>
-                </div>
-                
-                ${endpointsHtml}
-                
-                <div class="health-check-time">Last checked: ${lastCheckStr}</div>
-                <div class="health-check-next">Next check: ${nextCheckStr}</div>
-            `;
-        }
-
-        function renderHealthError(message) {
-            const container = document.getElementById('healthCheckContent');
-            container.innerHTML = `
-                <div class="health-check-status">
-                    <span class="status-indicator status-offline"></span>
-                    <span>Error Loading Status</span>
-                </div>
-                <div class="health-error">Failed to connect to server. ${message}</div>
-                <div class="health-check-time">Retry with refresh button</div>
-            `;
-        }
-
-        function updateSidebarWithHealthData() {
-            if (!healthData || !healthData.endpoints) return;
-            
-            // Update all sidebar links with health status
-            document.querySelectorAll('.sidebar-link').forEach(link => {
-                const path = link.dataset.path;
-                if (path && healthData.endpoints[path]) {
-                    const status = healthData.endpoints[path].status;
-                    const indicator = link.querySelector('.status-indicator');
-                    if (indicator) {
-                        indicator.className = `status-indicator status-${status}`;
-                    }
-                }
-            });
-        }
-
-        async function refreshHealthStatus() {
-            const btn = document.getElementById('refreshHealthBtn');
-            btn.classList.add('spinning');
-            
-            // Show loading state
-            document.getElementById('healthCheckContent').innerHTML = `
-                <div class="health-check-loading">
-                    <span class="loading" style="width: 16px; height: 16px; border-color: var(--border); border-top-color: var(--accent);"></span>
-                    Refreshing...
-                </div>
-            `;
-            
-            await loadHealthStatus();
-            
-            setTimeout(() => btn.classList.remove('spinning'), 500);
-        }
-
-        function formatDateTime(date) {
-            if (!date || isNaN(date.getTime())) return 'Invalid Date';
-            
-            return date.toLocaleString('en-US', { 
-                timeZone: 'Asia/Colombo',
-                month: 'short', day: 'numeric',
-                hour: '2-digit', minute: '2-digit', hour12: true
-            });
-        }
-
-        // ============================================
-        // STATS SYSTEM
-        // ============================================
-
+        
         const STATS_CONFIG = {
             visitorDateKey: 'sri_api_visitor_date',
             visitorIdKey: 'sri_api_visitor_id',
@@ -694,13 +516,17 @@
             lastIpFetch: 'sri_api_last_ip_fetch'
         };
 
+        const pendingApiCalls = new Set();
+
         async function getClientIP() {
             try {
                 const lastFetch = localStorage.getItem(STATS_CONFIG.lastIpFetch);
                 const cachedIp = localStorage.getItem(STATS_CONFIG.visitorIpKey);
                 const today = new Date().toISOString().split('T')[0];
                 
-                if (lastFetch === today && cachedIp) return cachedIp;
+                if (lastFetch === today && cachedIp) {
+                    return cachedIp;
+                }
                 
                 const response = await fetch('https://api.ipify.org?format=json');
                 const data = await response.json();
@@ -722,17 +548,24 @@
                     }
                 } catch (e2) {}
             }
-            return generateBrowserFingerprint();
+            
+            const fallbackId = generateBrowserFingerprint();
+            return fallbackId;
         }
-
+        
         function generateBrowserFingerprint() {
             const components = [
-                navigator.userAgent, navigator.language, screen.colorDepth,
-                screen.width + 'x' + screen.height, new Date().getTimezoneOffset(),
-                !!window.sessionStorage, !!window.localStorage,
+                navigator.userAgent,
+                navigator.language,
+                screen.colorDepth,
+                screen.width + 'x' + screen.height,
+                new Date().getTimezoneOffset(),
+                !!window.sessionStorage,
+                !!window.localStorage,
                 navigator.hardwareConcurrency || 'unknown',
                 navigator.deviceMemory || 'unknown'
             ];
+            
             const fingerprint = components.join('|||');
             let hash = 0;
             for (let i = 0; i < fingerprint.length; i++) {
@@ -754,14 +587,19 @@
             const lastVisitDate = localStorage.getItem(STATS_CONFIG.visitorDateKey);
             const storedIp = localStorage.getItem(STATS_CONFIG.visitorIdKey);
             
-            if (lastVisitDate !== today || storedIp !== ip) {
+            const isNewDay = lastVisitDate !== today;
+            const isDifferentIP = storedIp !== ip;
+            
+            if (isNewDay || isDifferentIP) {
                 try {
                     const response = await fetch(`${BACKEND_URL}/stats/increment`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ type: 'visitor', visitorId: ip })
                     });
+                    
                     const result = await response.json();
+                    
                     if (result.success) {
                         localStorage.setItem(STATS_CONFIG.visitorDateKey, today);
                         localStorage.setItem(STATS_CONFIG.visitorIdKey, ip);
@@ -775,530 +613,110 @@
                 const response = await fetch(`${BACKEND_URL}/stats`);
                 if (response.ok) {
                     const stats = await response.json();
-                    document.getElementById('apiCallsCounter').textContent = formatNumber(stats.apiCalls || 0);
-                    document.getElementById('visitorsCounter').textContent = formatNumber(stats.totalVisitors || 0);
+                    const apiCallsEl = document.getElementById('apiCallsCounter');
+                    const visitorsEl = document.getElementById('visitorsCounter');
+                    
+                    if (apiCallsEl) apiCallsEl.textContent = formatNumber(stats.apiCalls || 0);
+                    if (visitorsEl) visitorsEl.textContent = formatNumber(stats.totalVisitors || 0);
                 }
             } catch (e) {
-                console.error('[STATS] Failed to update:', e);
+                console.log('[STATS] Failed to load stats');
             }
         }
 
         function formatNumber(num) {
-            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1) + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(1) + 'K';
+            }
             return num.toString();
         }
 
         // ============================================
-        // SIDEBAR & NAVIGATION
+        // HEALTH STATUS FROM BACKEND
         // ============================================
 
-        function renderSidebar() {
-            const content = document.getElementById('sidebarContent');
-            content.innerHTML = '';
-            
-            Object.keys(apiData).forEach(categoryKey => {
-                const category = apiData[categoryKey];
-                
-                const section = document.createElement('div');
-                section.className = 'sidebar-section';
-                
-                const title = document.createElement('div');
-                title.className = 'sidebar-section-title';
-                title.innerHTML = `<span>${category.title}</span><span class="sidebar-section-count">${category.endpoints.length}</span>`;
-                section.appendChild(title);
-                
-                const menu = document.createElement('ul');
-                menu.className = 'sidebar-menu';
-                
-                category.endpoints.forEach((endpoint, index) => {
-                    const li = document.createElement('li');
-                    li.className = 'sidebar-item';
-                    
-                    const link = document.createElement('a');
-                    link.className = 'sidebar-link';
-                    link.dataset.path = endpoint.path;
-                    link.dataset.category = categoryKey;
-                    link.dataset.index = index;
-                    
-                    if (currentEndpoint && currentEndpoint.path === endpoint.path) {
-                        link.classList.add('active');
-                    }
-                    
-                    link.onclick = (e) => {
-                        e.preventDefault();
-                        showEndpointDetail(categoryKey, index);
-                        if (window.innerWidth < 1024) toggleSidebar();
-                    };
-                    
-                    // Get status from health data if available
-                    let statusClass = 'status-unknown';
-                    if (healthData && healthData.endpoints && healthData.endpoints[endpoint.path]) {
-                        statusClass = `status-${healthData.endpoints[endpoint.path].status}`;
-                    }
-                    
-                    link.innerHTML = `
-                        <span class="status-indicator ${statusClass}"></span>
-                        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                        </svg>
-                        <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${endpoint.name}</span>
-                        <span class="endpoint-badge">${endpoint.method}</span>
-                    `;
-                    
-                    li.appendChild(link);
-                    menu.appendChild(li);
-                });
-                
-                section.appendChild(menu);
-                content.appendChild(section);
-            });
-        }
-
-        function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('active');
-            document.querySelector('.sidebar-overlay').classList.toggle('active');
-        }
-
-        function closeSidebar() {
-            document.getElementById('sidebar').classList.remove('active');
-            document.querySelector('.sidebar-overlay').classList.remove('active');
-        }
-
-        // ============================================
-        // VIEW NAVIGATION
-        // ============================================
-
-        function hideAllSections() {
-            document.getElementById('homeSection').style.display = 'none';
-            document.getElementById('searchResultsSection').classList.remove('active');
-            document.getElementById('apiListSection').classList.remove('active');
-            document.getElementById('endpointDetail').classList.remove('active');
-        }
-
-        function showHome() {
-            hideAllSections();
-            document.getElementById('homeSection').style.display = 'flex';
-            document.getElementById('homeSection').classList.remove('compact');
-            document.getElementById('heroButtons').style.display = 'flex';
-            document.getElementById('homeSearchInput').value = '';
-            document.getElementById('homeSearchClear').classList.remove('visible');
-            
-            currentCategory = null;
-            currentEndpoint = null;
-            isShowingAllApis = false;
-            
-            renderSidebar();
-            closeSidebar();
-            window.scrollTo(0, 0);
-        }
-
-        function showAllApis() {
-            isShowingAllApis = true;
-            currentCategory = null;
-            currentEndpoint = null;
-            
-            hideAllSections();
-            document.getElementById('apiListSection').classList.add('active');
-            document.getElementById('listTitle').textContent = 'All APIs';
-            
-            const list = document.getElementById('endpointsList');
-            list.innerHTML = '';
-            
-            Object.keys(apiData).forEach(categoryKey => {
-                const catData = apiData[categoryKey];
-                
-                const categoryHeader = document.createElement('div');
-                categoryHeader.className = 'category-header';
-                categoryHeader.innerHTML = `
-                    <span class="category-title">${catData.title}</span>
-                    <span class="category-count">${catData.endpoints.length} endpoints</span>
-                `;
-                list.appendChild(categoryHeader);
-                
-                catData.endpoints.forEach((endpoint, index) => {
-                    const card = createEndpointCard(categoryKey, index, endpoint);
-                    list.appendChild(card);
-                });
-            });
-            
-            renderSidebar();
-            window.scrollTo(0, 0);
-        }
-
-        function showApiList(category) {
-            isShowingAllApis = false;
-            currentCategory = category;
-            currentEndpoint = null;
-            
-            hideAllSections();
-            document.getElementById('apiListSection').classList.add('active');
-            document.getElementById('listTitle').textContent = apiData[category].title;
-            
-            const list = document.getElementById('endpointsList');
-            list.innerHTML = '';
-            
-            apiData[category].endpoints.forEach((endpoint, index) => {
-                const card = createEndpointCard(category, index, endpoint);
-                list.appendChild(card);
-            });
-            
-            renderSidebar();
-            window.scrollTo(0, 0);
-        }
-
-        function createEndpointCard(category, index, endpoint) {
-            const card = document.createElement('div');
-            card.className = 'endpoint-card';
-            card.onclick = () => showEndpointDetail(category, index);
-            
-            // Get status from health data
-            let statusClass = 'status-unknown';
-            if (healthData && healthData.endpoints && healthData.endpoints[endpoint.path]) {
-                statusClass = `status-${healthData.endpoints[endpoint.path].status}`;
-            }
-            
-            card.innerHTML = `
-                <div class="endpoint-header">
-                    <div style="flex: 1; min-width: 0;">
-                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                            <span class="endpoint-method">${endpoint.method}</span>
-                            <span class="status-indicator ${statusClass}"></span>
-                        </div>
-                        <h3 class="endpoint-name">${endpoint.name}</h3>
-                        <p class="endpoint-description">${endpoint.description}</p>
-                    </div>
-                    <div class="endpoint-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                        </svg>
-                    </div>
-                </div>
-            `;
-            
-            return card;
-        }
-
-        function showEndpointDetail(category, index) {
-            currentCategory = category;
-            currentEndpoint = apiData[category].endpoints[index];
-            currentResponse = null;
-            isShowingAllApis = false;
-            
-            hideAllSections();
-            document.getElementById('endpointDetail').classList.add('active');
-            
-            document.getElementById('detailTitle').textContent = currentEndpoint.name;
-            document.getElementById('detailDescription').textContent = currentEndpoint.description;
-            document.getElementById('endpointUrl').textContent = `${BACKEND_URL}${currentEndpoint.path}`;
-            
-            // Render parameters table
-            const paramsBody = document.getElementById('paramsTableBody');
-            paramsBody.innerHTML = '';
-            
-            if (currentEndpoint.params && currentEndpoint.params.length > 0) {
-                document.getElementById('paramsSection').style.display = 'block';
-                currentEndpoint.params.forEach(param => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>
-                            <div class="param-name">${param.name}</div>
-                            ${param.required ? '<span class="param-required">required</span>' : ''}
-                        </td>
-                        <td><span class="param-type">${param.type}</span></td>
-                        <td>${param.description}</td>
-                    `;
-                    paramsBody.appendChild(row);
-                });
-            } else {
-                document.getElementById('paramsSection').style.display = 'none';
-            }
-            
-            // Render test inputs
-            renderTestInputs();
-            
-            // Reset response section
-            document.getElementById('responseSection').classList.remove('active');
-            
-            // Update code examples
-            updateCodeExamples();
-            
-            renderSidebar();
-            window.scrollTo(0, 0);
-        }
-
-        function goBackFromDetail() {
-            if (isShowingAllApis) {
-                showAllApis();
-            } else if (currentCategory) {
-                showApiList(currentCategory);
-            } else {
-                showHome();
-            }
-        }
-
-        // ============================================
-        // TEST ENDPOINT
-        // ============================================
-
-        function renderTestInputs() {
-            const container = document.getElementById('testInputs');
-            container.innerHTML = '';
-            
-            const params = currentEndpoint.params || [];
-            
-            if (params.length === 0) {
-                container.innerHTML = '<p style="color: var(--text-secondary); font-size: 14px;">No parameters required for this endpoint.</p>';
-                return;
-            }
-            
-            params.forEach(param => {
-                const group = document.createElement('div');
-                group.className = 'input-group';
-                group.innerHTML = `
-                    <label class="input-label">
-                        ${param.name}${param.required ? '<span style="color: #ff4444;">*</span>' : ''}
-                    </label>
-                    <input type="text" 
-                           id="input-${param.name}" 
-                           class="test-input" 
-                           placeholder="${param.placeholder || ''}" 
-                           value="${param.placeholder || ''}"
-                           oninput="updateEndpointUrl(); updateCodeExamples();">
-                `;
-                container.appendChild(group);
-            });
-        }
-
-        function updateEndpointUrl() {
-            let url = `${BACKEND_URL}${currentEndpoint.path}`;
-            const params = currentEndpoint.params || [];
-            
-            if (params.length > 0) {
-                const queryParams = [];
-                params.forEach(param => {
-                    const input = document.getElementById(`input-${param.name}`);
-                    const value = input ? input.value : '';
-                    if (value) {
-                        queryParams.push(`${encodeURIComponent(param.name)}=${encodeURIComponent(value)}`);
-                    }
-                });
-                if (queryParams.length > 0) {
-                    url += '?' + queryParams.join('&');
-                }
-            }
-            
-            document.getElementById('endpointUrl').textContent = url;
-        }
-
-        function buildRequestUrl() {
-            let url = `${BACKEND_URL}${currentEndpoint.path}`;
-            const params = currentEndpoint.params || [];
-            
-            if (params.length > 0) {
-                const queryParams = [];
-                params.forEach(param => {
-                    const input = document.getElementById(`input-${param.name}`);
-                    const value = input ? input.value : '';
-                    if (value) {
-                        queryParams.push(`${encodeURIComponent(param.name)}=${encodeURIComponent(value)}`);
-                    }
-                });
-                if (queryParams.length > 0) {
-                    url += '?' + queryParams.join('&');
-                }
-            }
-            
-            return url;
-        }
-
-        async function testEndpoint() {
-            const responseSection = document.getElementById('responseSection');
-            const responseStatus = document.getElementById('responseStatus');
-            const responseContent = document.getElementById('responseContent');
-            const responseTime = document.getElementById('responseTime');
-            const testBtnText = document.getElementById('testBtnText');
-            
-            responseSection.classList.add('active');
-            responseStatus.className = 'response-status status-loading';
-            responseStatus.innerHTML = '<span class="loading"></span> Sending Request...';
-            responseContent.textContent = 'Waiting for response...';
-            responseTime.textContent = '';
-            testBtnText.textContent = 'Sending...';
-            
-            const startTime = performance.now();
-            
+        async function loadHealthStatusFromBackend() {
             try {
-                const url = buildRequestUrl();
-                const response = await fetch(url, {
-                    method: 'GET',
-                    headers: { 'Accept': 'application/json' }
-                });
-                
-                const endTime = performance.now();
-                const duration = (endTime - startTime).toFixed(0);
-                
-                const data = await response.json();
-                currentResponse = data;
-                
-                if (response.ok && data.status !== false) {
-                    responseStatus.className = 'response-status status-success';
-                    responseStatus.innerHTML = `
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                            <polyline points="20 6 9 17 4 12"></polyline>
-                        </svg>
-                        Success (${response.status})
-                    `;
-                } else {
-                    responseStatus.className = 'response-status status-error';
-                    responseStatus.innerHTML = `
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                        </svg>
-                        Error (${response.status})
-                    `;
+                const response = await fetch(`${BACKEND_URL}/health/status`);
+                if (response.ok) {
+                    const healthData = await response.json();
+                    
+                    // Update health check panel
+                    updateHealthCheckPanel(healthData);
+                    
+                    // Update endpoint statuses in apiData
+                    if (healthData.endpoints) {
+                        Object.keys(apiData).forEach(categoryKey => {
+                            apiData[categoryKey].endpoints.forEach(endpoint => {
+                                const healthEndpoint = Object.values(healthData.endpoints).find(
+                                    he => he.path === endpoint.path || he.name === endpoint.name
+                                );
+                                if (healthEndpoint) {
+                                    endpoint.status = healthEndpoint.status;
+                                } else {
+                                    endpoint.status = 'offline';
+                                }
+                            });
+                        });
+                    }
+                    
+                    // Re-render sidebar with updated statuses
+                    renderSidebar();
+                    
+                    console.log('[HEALTH] Loaded from backend:', healthData.summary);
                 }
-                
-                responseTime.textContent = `${duration}ms`;
-                responseContent.innerHTML = syntaxHighlight(JSON.stringify(data, null, 2));
-                
-            } catch (error) {
-                responseStatus.className = 'response-status status-error';
-                responseStatus.innerHTML = `
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                        <line x1="6" y1="6" x2="18" y2="18"></line>
-                    </svg>
-                    Network Error
-                `;
-                responseContent.textContent = `Error: ${error.message}\n\nMake sure the API server is running and accessible.`;
-            } finally {
-                testBtnText.textContent = 'Send Request';
+            } catch (e) {
+                console.log('[HEALTH] Failed to load from backend');
+                // If backend fails, show all as offline
+                Object.keys(apiData).forEach(categoryKey => {
+                    apiData[categoryKey].endpoints.forEach(endpoint => {
+                        endpoint.status = 'offline';
+                    });
+                });
+                renderSidebar();
             }
         }
 
-        function openInBrowser() {
-            window.open(buildRequestUrl(), '_blank');
-        }
-
-        function syntaxHighlight(json) {
-            return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
-                let cls = 'json-number';
-                if (/^"/.test(match)) {
-                    if (/:$/.test(match)) {
-                        cls = 'json-key';
-                        match = match.slice(0, -1) + '</span>:';
-                    } else {
-                        cls = 'json-string';
-                    }
-                } else if (/true|false/.test(match)) {
-                    cls = 'json-boolean';
-                } else if (/null/.test(match)) {
-                    cls = 'json-null';
+        function updateHealthCheckPanel(healthData) {
+            const statusEl = document.getElementById('healthCheckStatus');
+            const timeEl = document.getElementById('healthCheckTime');
+            const nextEl = document.getElementById('healthCheckNext');
+            
+            let statusClass = 'status-checking';
+            let message = 'Unknown';
+            
+            if (healthData.summary) {
+                const { online, total } = healthData.summary;
+                message = `${online}/${total} APIs Online`;
+                
+                if (online === total) {
+                    statusClass = 'status-online';
+                } else if (online === 0) {
+                    statusClass = 'status-offline';
+                } else {
+                    statusClass = 'status-checking';
                 }
-                return '<span class="' + cls + '">' + match + '</span>';
-            });
-        }
-
-        function copyResponse() {
-            if (!currentResponse) return;
-            navigator.clipboard.writeText(JSON.stringify(currentResponse, null, 2)).then(() => {
-                showToast('Response copied!');
-            });
-        }
-
-        function downloadResponse() {
-            if (!currentResponse) return;
+            }
             
-            const json = JSON.stringify(currentResponse, null, 2);
-            const blob = new Blob([json], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
+            statusEl.innerHTML = `<span class="status-indicator ${statusClass}"></span><span>${message}</span>`;
             
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `response-${currentEndpoint.path.replace(/\//g, '-')}-${Date.now()}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            if (healthData.lastCheckTime) {
+                timeEl.textContent = `Last checked: ${healthData.lastCheckTime}`;
+            } else {
+                timeEl.textContent = 'Last checked: Never';
+            }
             
-            showToast('Response downloaded!');
+            if (healthData.nextCheckTime) {
+                nextEl.textContent = `Next check: ${healthData.nextCheckTime}`;
+            } else {
+                nextEl.textContent = 'Next check: Today at 12:00 AM';
+            }
         }
 
         // ============================================
-        // CODE EXAMPLES
-        // ============================================
-
-        function updateCodeExamples() {
-            const url = buildRequestUrl();
-            
-            const examples = {
-                curl: `curl -X GET "${url}" \\\n  -H "Accept: application/json"`,
-                
-                node: `const axios = require('axios');
-
-const url = '${url}';
-
-axios.get(url)
-  .then(response => {
-    console.log(response.data);
-  })
-  .catch(error => {
-    console.error(error);
-  });`,
-                
-                python: `import requests
-
-url = "${url}"
-
-response = requests.get(url)
-data = response.json()
-
-print(data)`,
-                
-                php: `<?php
-
-$url = '${url}';
-
-$ch = curl_init($url);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-$response = curl_exec($ch);
-curl_close($ch);
-
-$data = json_decode($response, true);
-print_r($data);`
-            };
-            
-            const code = examples[currentTab] || examples.curl;
-            document.getElementById('codeContent').innerHTML = code.split('\n').map((line, i) => 
-                `<div class="code-line"><span class="line-number">${i + 1}</span><span>${escapeHtml(line)}</span></div>`
-            ).join('');
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        function switchTab(tab) {
-            currentTab = tab;
-            document.querySelectorAll('.code-tab').forEach(t => t.classList.remove('active'));
-            event.target.classList.add('active');
-            updateCodeExamples();
-        }
-
-        function copyCode() {
-            const code = Array.from(document.querySelectorAll('#codeContent .code-line span:last-child'))
-                .map(line => line.textContent).join('\n');
-            navigator.clipboard.writeText(code).then(() => {
-                showToast('Code copied!');
-            });
-        }
-
-        // ============================================
-        // SEARCH
+        // EXISTING FUNCTIONS
         // ============================================
 
         function setupHomeSearch() {
@@ -1311,7 +729,6 @@ print_r($data);`
             homeSearchInput.addEventListener('input', (e) => {
                 const query = e.target.value.trim();
                 homeSearchClear.classList.toggle('visible', query.length > 0);
-                
                 if (query.length > 0) {
                     hero.classList.add('compact');
                     heroButtons.style.display = 'none';
@@ -1336,60 +753,19 @@ print_r($data);`
             const grid = document.getElementById('searchResultsGrid');
             const countEl = document.getElementById('searchResultsCount');
             const lowerQuery = query.toLowerCase();
-            
             const results = [];
-            
             Object.entries(apiData).forEach(([catKey, category]) => {
                 category.endpoints.forEach((endpoint, index) => {
                     const matchScore = calculateMatchScore(endpoint, category, lowerQuery);
-                    if (matchScore > 0) {
-                        results.push({ category, categoryKey: catKey, endpoint, index, score: matchScore });
-                    }
+                    if (matchScore > 0) results.push({ category, categoryKey: catKey, endpoint, index, score: matchScore });
                 });
             });
-            
             results.sort((a, b) => b.score - a.score);
             countEl.textContent = `${results.length} endpoint${results.length !== 1 ? 's' : ''} found`;
-            
             if (results.length === 0) {
-                grid.innerHTML = `
-                    <div class="search-no-results" style="grid-column: 1 / -1;">
-                        <svg class="search-no-results-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <circle cx="11" cy="11" r="8"></circle>
-                            <path d="m21 21-4.35-4.35"></path>
-                            <line x1="8" y1="8" x2="14" y2="14"></line>
-                            <line x1="14" y1="8" x2="8" y2="14"></line>
-                        </svg>
-                        <div class="search-no-results-title">No endpoints found</div>
-                        <div class="search-no-results-text">Try searching for "youtube", "download", "instagram", or "free fire"</div>
-                        <div class="search-suggestions">
-                            <div class="search-suggestions-title">Popular searches</div>
-                            <div class="search-suggestion-tags">
-                                <span class="search-suggestion-tag" onclick="setHomeSearch('youtube')">youtube</span>
-                                <span class="search-suggestion-tag" onclick="setHomeSearch('tiktok')">tiktok</span>
-                                <span class="search-suggestion-tag" onclick="setHomeSearch('instagram')">instagram</span>
-                                <span class="search-suggestion-tag" onclick="setHomeSearch('free fire')">free fire</span>
-                            </div>
-                        </div>
-                    </div>
-                `;
+                grid.innerHTML = `<div class="search-no-results" style="grid-column: 1 / -1;"><svg class="search-no-results-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path><line x1="8" y1="8" x2="14" y2="14"></line><line x1="14" y1="8" x2="8" y2="14"></line></svg><div class="search-no-results-title">No endpoints found</div><div class="search-no-results-text">Try searching for "youtube", "download", "instagram", or "free fire"</div><div class="search-suggestions"><div class="search-suggestions-title">Popular searches</div><div class="search-suggestion-tags"><span class="search-suggestion-tag" onclick="setHomeSearch('youtube')">youtube</span><span class="search-suggestion-tag" onclick="setHomeSearch('tiktok')">tiktok</span><span class="search-suggestion-tag" onclick="setHomeSearch('instagram')">instagram</span><span class="search-suggestion-tag" onclick="setHomeSearch('free fire')">free fire</span></div></div></div>`;
             } else {
-                grid.innerHTML = results.map(result => `
-                    <div class="search-result-card" onclick="showEndpointDetail('${result.categoryKey}', ${result.index})">
-                        <div class="search-result-category">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                            </svg>
-                            ${result.category.title}
-                        </div>
-                        <div class="search-result-name">${highlightMatch(result.endpoint.name, lowerQuery)}</div>
-                        <div class="search-result-description">${result.endpoint.description}</div>
-                        <div class="search-result-meta">
-                            <span class="search-result-method">${result.endpoint.method}</span>
-                            <span class="search-result-path">${result.endpoint.path}</span>
-                        </div>
-                    </div>
-                `).join('');
+                grid.innerHTML = results.map(result => `<div class="search-result-card" onclick="showEndpointDetail('${result.categoryKey}', ${result.index})"><div class="search-result-category"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>${result.category.title}</div><div class="search-result-name">${highlightMatch(result.endpoint.name, lowerQuery)}</div><div class="search-result-description">${result.endpoint.description}</div><div class="search-result-meta"><span class="search-result-method">${result.endpoint.method}</span><span class="search-result-path">${result.endpoint.path}</span></div></div>`).join('');
             }
         }
 
@@ -1399,15 +775,12 @@ print_r($data);`
             const descLower = endpoint.description.toLowerCase();
             const pathLower = endpoint.path.toLowerCase();
             const catLower = category.title.toLowerCase();
-            
             if (nameLower === query) score += 100;
             else if (nameLower.startsWith(query)) score += 80;
             else if (nameLower.includes(query)) score += 60;
-            
             if (pathLower.includes(query)) score += 40;
             if (descLower.includes(query)) score += 20;
             if (catLower.includes(query)) score += 10;
-            
             return score;
         }
 
@@ -1436,49 +809,75 @@ print_r($data);`
             document.getElementById('homeSearchClear').classList.remove('visible');
         }
 
-        // ============================================
-        // SIDEBAR SEARCH
-        // ============================================
-
-        function setupSidebarSearch() {
-            const sidebarSearchInput = document.getElementById('sidebarSearchInput');
-            
-            sidebarSearchInput.addEventListener('input', (e) => {
-                sidebarSearchQuery = e.target.value.trim().toLowerCase();
-                renderSidebar();
+        function renderSidebar() {
+            const content = document.getElementById('sidebarContent');
+            content.innerHTML = '';
+            let totalResults = 0;
+            Object.keys(apiData).forEach(categoryKey => {
+                const category = apiData[categoryKey];
+                const filteredEndpoints = category.endpoints.filter(endpoint => {
+                    if (!sidebarSearchQuery) return true;
+                    const query = sidebarSearchQuery.toLowerCase();
+                    return endpoint.name.toLowerCase().includes(query) || endpoint.description.toLowerCase().includes(query) || endpoint.path.toLowerCase().includes(query) || category.title.toLowerCase().includes(query);
+                });
+                if (filteredEndpoints.length === 0) return;
+                totalResults += filteredEndpoints.length;
+                const section = document.createElement('div');
+                section.className = 'sidebar-section';
+                const title = document.createElement('div');
+                title.className = 'sidebar-section-title';
+                title.innerHTML = `<span>${category.title}</span><span class="sidebar-section-count">${filteredEndpoints.length}</span>`;
+                section.appendChild(title);
+                const menu = document.createElement('ul');
+                menu.className = 'sidebar-menu';
+                filteredEndpoints.forEach(endpoint => {
+                    const originalIndex = category.endpoints.indexOf(endpoint);
+                    const li = document.createElement('li');
+                    li.className = 'sidebar-item';
+                    const link = document.createElement('a');
+                    link.className = 'sidebar-link';
+                    if (sidebarSearchQuery && (endpoint.name.toLowerCase().includes(sidebarSearchQuery.toLowerCase()) || endpoint.path.toLowerCase().includes(sidebarSearchQuery.toLowerCase()))) link.classList.add('highlight');
+                    if (currentEndpoint && currentEndpoint.path === endpoint.path) link.classList.add('active');
+                    link.onclick = () => { showEndpointDetail(categoryKey, originalIndex); if (window.innerWidth < 1024) toggleSidebar(); };
+                    let statusClass = endpoint.status === 'online' ? 'status-online' : endpoint.status === 'offline' ? 'status-offline' : 'status-checking';
+                    link.innerHTML = `<span class="status-indicator ${statusClass}"></span><svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg><span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${endpoint.name}</span><span class="endpoint-badge">${endpoint.method}</span>`;
+                    li.appendChild(link);
+                    menu.appendChild(li);
+                });
+                section.appendChild(menu);
+                content.appendChild(section);
             });
+            if (totalResults === 0 && sidebarSearchQuery) content.innerHTML = `<div class="no-results"><svg class="no-results-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path><line x1="8" y1="8" x2="14" y2="14"></line><line x1="14" y1="8" x2="8" y2="14"></line></svg><div>No endpoints found</div><div style="font-size: 12px; margin-top: 8px; opacity: 0.7;">Try a different search term</div></div>`;
         }
 
-        // ============================================
-        // KEYBOARD SHORTCUTS
-        // ============================================
+        const sidebarSearchInput = document.getElementById('sidebarSearchInput');
+        const sidebarSearchClear = document.getElementById('sidebarSearchClear');
+        sidebarSearchInput.addEventListener('input', (e) => {
+            sidebarSearchQuery = e.target.value.trim();
+            sidebarSearchClear.classList.toggle('visible', sidebarSearchQuery.length > 0);
+            renderSidebar();
+        });
+
+        function clearSidebarSearch() {
+            sidebarSearchQuery = '';
+            sidebarSearchInput.value = '';
+            sidebarSearchClear.classList.remove('visible');
+            renderSidebar();
+        }
 
         function setupKeyboardShortcuts() {
             document.addEventListener('keydown', (e) => {
-                // '/' to search
                 if (e.key === '/' && !e.metaKey && !e.ctrlKey && e.target.tagName !== 'INPUT') {
                     e.preventDefault();
                     const sidebar = document.getElementById('sidebar');
-                    if (sidebar.classList.contains('active') || window.innerWidth >= 1024) {
-                        document.getElementById('sidebarSearchInput').focus();
-                    } else {
-                        document.getElementById('homeSearchInput').focus();
-                    }
+                    if (sidebar.classList.contains('active') || window.innerWidth >= 1024) sidebarSearchInput.focus();
+                    else document.getElementById('homeSearchInput').focus();
                 }
-                
-                // 'Escape' to close
                 if (e.key === 'Escape') {
-                    if (document.getElementById('homeSearchInput').value) {
-                        clearHomeSearch();
-                        return;
-                    }
+                    if (document.getElementById('homeSearchInput').value) { clearHomeSearch(); return; }
                     const sidebar = document.getElementById('sidebar');
-                    if (sidebar.classList.contains('active') && window.innerWidth < 1024) {
-                        toggleSidebar();
-                    }
+                    if (sidebar.classList.contains('active') && window.innerWidth < 1024) toggleSidebar();
                 }
-                
-                // 'm' to toggle menu
                 if (e.key === 'm' && !e.metaKey && !e.ctrlKey && e.target.tagName !== 'INPUT') {
                     e.preventDefault();
                     toggleSidebar();
@@ -1486,15 +885,262 @@ print_r($data);`
             });
         }
 
-        // ============================================
-        // UTILITIES
-        // ============================================
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('active');
+            document.querySelector('.sidebar-overlay').classList.toggle('active');
+        }
+
+        function closeSidebar() {
+            document.getElementById('sidebar').classList.remove('active');
+            document.querySelector('.sidebar-overlay').classList.remove('active');
+        }
+
+        function showHome() {
+            hideAllSections();
+            document.getElementById('homeSection').style.display = 'flex';
+            document.getElementById('searchResultsSection').classList.remove('active');
+            currentCategory = null;
+            currentEndpoint = null;
+            isShowingAllApis = false;
+            document.getElementById('homeSection').classList.remove('compact');
+            document.getElementById('heroButtons').style.display = 'flex';
+            clearHomeSearch();
+            renderSidebar();
+            closeSidebar();
+            window.scrollTo(0, 0);
+        }
+
+        function showAllApis() {
+            isShowingAllApis = true;
+            currentCategory = null;
+            currentEndpoint = null;
+            hideAllSections();
+            document.getElementById('apiListSection').classList.add('active');
+            document.getElementById('listTitle').textContent = 'All APIs';
+            const list = document.getElementById('endpointsList');
+            list.innerHTML = '';
+            Object.keys(apiData).forEach(categoryKey => {
+                const catData = apiData[categoryKey];
+                const categoryHeader = document.createElement('div');
+                categoryHeader.className = 'category-header';
+                categoryHeader.innerHTML = `<span class="category-title">${catData.title}</span><span class="category-count">${catData.endpoints.length} endpoints</span>`;
+                list.appendChild(categoryHeader);
+                catData.endpoints.forEach((endpoint, index) => {
+                    const card = document.createElement('div');
+                    card.className = 'endpoint-card';
+                    card.onclick = () => showEndpointDetail(categoryKey, index);
+                    let statusClass = endpoint.status === 'online' ? 'status-online' : endpoint.status === 'offline' ? 'status-offline' : 'status-checking';
+                    card.innerHTML = `<div class="endpoint-header"><div style="flex: 1; min-width: 0;"><div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;"><span class="endpoint-method">${endpoint.method}</span><span class="status-indicator ${statusClass}"></span></div><h3 class="endpoint-name">${endpoint.name}</h3><p class="endpoint-description">${endpoint.description}</p></div><div class="endpoint-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div></div>`;
+                    list.appendChild(card);
+                });
+            });
+            renderSidebar();
+            window.scrollTo(0, 0);
+        }
+
+        function showApiList(category) {
+            isShowingAllApis = false;
+            currentCategory = category;
+            currentEndpoint = null;
+            hideAllSections();
+            document.getElementById('apiListSection').classList.add('active');
+            document.getElementById('listTitle').textContent = apiData[category].title;
+            const list = document.getElementById('endpointsList');
+            list.innerHTML = '';
+            apiData[category].endpoints.forEach((endpoint, index) => {
+                const card = document.createElement('div');
+                card.className = 'endpoint-card';
+                card.onclick = () => showEndpointDetail(category, index);
+                let statusClass = endpoint.status === 'online' ? 'status-online' : endpoint.status === 'offline' ? 'status-offline' : 'status-checking';
+                card.innerHTML = `<div class="endpoint-header"><div style="flex: 1; min-width: 0;"><div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;"><span class="endpoint-method">${endpoint.method}</span><span class="status-indicator ${statusClass}"></span></div><h3 class="endpoint-name">${endpoint.name}</h3><p class="endpoint-description">${endpoint.description}</p></div><div class="endpoint-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div></div>`;
+                list.appendChild(card);
+            });
+            renderSidebar();
+            window.scrollTo(0, 0);
+        }
+
+        function showEndpointDetail(category, index) {
+            currentCategory = category;
+            currentEndpoint = apiData[category].endpoints[index];
+            currentResponse = null;
+            isShowingAllApis = false;
+            hideAllSections();
+            document.getElementById('endpointDetail').classList.add('active');
+            document.getElementById('detailTitle').textContent = currentEndpoint.name;
+            document.getElementById('detailDescription').textContent = currentEndpoint.description;
+            updateEndpointUrl();
+            const paramsBody = document.getElementById('paramsTableBody');
+            paramsBody.innerHTML = '';
+            if (currentEndpoint.params && currentEndpoint.params.length > 0) {
+                document.getElementById('paramsSection').style.display = 'block';
+                currentEndpoint.params.forEach(param => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `<td><div class="param-name">${param.name}</div>${param.required ? '<span class="param-required">required</span>' : ''}</td><td><span class="param-type">${param.type}</span></td><td>${param.description}</td>`;
+                    paramsBody.appendChild(row);
+                });
+            } else document.getElementById('paramsSection').style.display = 'none';
+            renderTestInputs();
+            document.getElementById('responseSection').classList.remove('active');
+            updateCodeExamples();
+            renderSidebar();
+            window.scrollTo(0, 0);
+        }
+
+        function goBackFromDetail() {
+            isShowingAllApis ? showAllApis() : currentCategory ? showApiList(currentCategory) : showHome();
+        }
+
+        function updateEndpointUrl() {
+            document.getElementById('endpointUrl').textContent = `${BACKEND_URL}${currentEndpoint.path}`;
+        }
+
+        function buildRequestUrl() {
+            let url = `${BACKEND_URL}${currentEndpoint.path}`;
+            const params = currentEndpoint.params || [];
+            if (params.length > 0) {
+                const queryParams = [];
+                params.forEach(param => {
+                    const input = document.getElementById(`input-${param.name}`);
+                    const value = input ? input.value : '';
+                    if (value) queryParams.push(`${encodeURIComponent(param.name)}=${encodeURIComponent(value)}`);
+                });
+                if (queryParams.length > 0) url += '?' + queryParams.join('&');
+            }
+            return url;
+        }
+
+        function renderTestInputs() {
+            const container = document.getElementById('testInputs');
+            container.innerHTML = '';
+            const params = currentEndpoint.params || [];
+            if (params.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-secondary); font-size: 14px;">No parameters required for this endpoint.</p>';
+                return;
+            }
+            params.forEach(param => {
+                const group = document.createElement('div');
+                group.className = 'input-group';
+                group.innerHTML = `<label class="input-label">${param.name}${param.required ? '<span style="color: #ff4444;">*</span>' : ''}</label><input type="text" id="input-${param.name}" class="test-input" placeholder="${param.placeholder || ''}" value="${param.placeholder || ''}" oninput="updateEndpointUrl(); updateCodeExamples();">`;
+                container.appendChild(group);
+            });
+        }
+
+        async function testEndpoint() {
+            const responseSection = document.getElementById('responseSection');
+            const responseStatus = document.getElementById('responseStatus');
+            const responseContent = document.getElementById('responseContent');
+            const responseTime = document.getElementById('responseTime');
+            const testBtnText = document.getElementById('testBtnText');
+            responseSection.classList.add('active');
+            responseStatus.className = 'response-status status-loading';
+            responseStatus.innerHTML = '<span class="loading"></span> Sending Request...';
+            responseContent.textContent = 'Waiting for response...';
+            responseTime.textContent = '';
+            testBtnText.textContent = 'Sending...';
+            const startTime = performance.now();
+            try {
+                const url = buildRequestUrl();
+                const response = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
+                const endTime = performance.now();
+                const duration = (endTime - startTime).toFixed(0);
+                const data = await response.json();
+                currentResponse = data;
+                if (response.ok && data.status !== false) {
+                    responseStatus.className = 'response-status status-success';
+                    responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Success (${response.status})`;
+                } else {
+                    responseStatus.className = 'response-status status-error';
+                    responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Error (${response.status})`;
+                }
+                responseTime.textContent = `${duration}ms`;
+                responseContent.innerHTML = syntaxHighlight(JSON.stringify(data, null, 2));
+                
+                console.log('[TEST] API call tracked by backend middleware');
+                
+            } catch (error) {
+                responseStatus.className = 'response-status status-error';
+                responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Network Error`;
+                responseContent.textContent = `Error: ${error.message}\n\nMake sure the API server is running and accessible.`;
+            } finally {
+                testBtnText.textContent = 'Send Request';
+            }
+        }
+
+        function syntaxHighlight(json) {
+            return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                let cls = 'json-number';
+                if (/^"/.test(match)) {
+                    if (/:$/.test(match)) { cls = 'json-key'; match = match.slice(0, -1) + '</span>:'; }
+                    else cls = 'json-string';
+                } else if (/true|false/.test(match)) cls = 'json-boolean';
+                else if (/null/.test(match)) cls = 'json-null';
+                return '<span class="' + cls + '">' + match + '</span>';
+            });
+        }
+
+        function copyResponse() {
+            if (!currentResponse) return;
+            navigator.clipboard.writeText(JSON.stringify(currentResponse, null, 2)).then(() => showToast('Response copied!'));
+        }
+
+        function downloadResponse() {
+            if (!currentResponse) return;
+            const json = JSON.stringify(currentResponse, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `response-${currentEndpoint.path.replace(/\//g, '-')}-${Date.now()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('Response downloaded!');
+        }
+
+        function openInBrowser() {
+            window.open(buildRequestUrl(), '_blank');
+        }
+
+        function updateCodeExamples() {
+            const url = buildRequestUrl();
+            const examples = {
+                curl: `curl -X GET "${url}" \\\n  -H "Accept: application/json"`,
+                node: `const axios = require('axios');\n\nconst url = '${url}';\n\naxios.get(url)\n  .then(response => {\n    console.log(response.data);\n  })\n  .catch(error => {\n    console.error(error);\n  });`,
+                python: `import requests\n\nurl = "${url}"\n\nresponse = requests.get(url)\ndata = response.json()\n\nprint(data)`,
+                php: `<?php\n\n$url = '${url}';\n\n$ch = curl_init($url);\ncurl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n$response = curl_exec($ch);\ncurl_close($ch);\n\n$data = json_decode($response, true);\nprint_r($data);`
+            };
+            const code = examples[currentTab] || examples.curl;
+            document.getElementById('codeContent').innerHTML = code.split('\n').map((line, i) => `<div class="code-line"><span class="line-number">${i + 1}</span><span>${escapeHtml(line)}</span></div>`).join('');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.code-tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            updateCodeExamples();
+        }
+
+        function hideAllSections() {
+            document.getElementById('homeSection').style.display = 'none';
+            document.getElementById('searchResultsSection').classList.remove('active');
+            document.getElementById('apiListSection').classList.remove('active');
+            document.getElementById('endpointDetail').classList.remove('active');
+        }
 
         function copyToClipboard(elementId) {
-            const text = document.getElementById(elementId).textContent;
-            navigator.clipboard.writeText(text).then(() => {
-                showToast('Copied to clipboard!');
-            });
+            navigator.clipboard.writeText(document.getElementById(elementId).textContent).then(() => showToast('Copied to clipboard!'));
+        }
+
+        function copyCode() {
+            const code = Array.from(document.querySelectorAll('#codeContent .code-line span:last-child')).map(line => line.textContent).join('\n');
+            navigator.clipboard.writeText(code).then(() => showToast('Code copied!'));
         }
 
         function showToast(message) {
@@ -1507,23 +1153,15 @@ print_r($data);`
         // ============================================
         // INITIALIZATION
         // ============================================
-
+        
         document.addEventListener('DOMContentLoaded', () => {
-            // Setup
             renderSidebar();
-            setupSidebarSearch();
-            setupHomeSearch();
             setupKeyboardShortcuts();
-            
-            // Load data
+            setupHomeSearch();
             initStats();
-            loadHealthStatus();
             
-            // Refresh health status every 5 minutes
-            setInterval(loadHealthStatus, 5 * 60 * 1000);
-            
-            // Refresh stats every 30 seconds
-            setInterval(updateStatsDisplay, 30000);
+            // Load health status from backend (no local health check on load)
+            loadHealthStatusFromBackend();
         });
     </script>
 </body>
