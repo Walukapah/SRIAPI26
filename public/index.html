@@ -569,8 +569,8 @@
                 statusClass = 'status-offline';
                 statusText = 'All Systems Down';
             } else if (summary.online > 0) {
-                statusClass = 'status-online';
-                statusText = 'Partially Operational';
+                statusClass = 'status-online'; // or 'status-partial' if you have that class
+                statusText = `${summary.online}/${summary.total} Online`;
             }
             
             // Format times
@@ -582,14 +582,15 @@
             if (endpoints && Object.keys(endpoints).length > 0) {
                 endpointsHtml = '<div class="health-endpoints">';
                 Object.entries(endpoints).forEach(([path, data]) => {
-                    const statusText = data.status === 'online' ? 'Online' : 
-                                     data.status === 'offline' ? 'Offline' : 'Unknown';
-                    const statusTextClass = `status-text-${data.status || 'unknown'}`;
+                    const status = data.status || 'unknown';
+                    const statusText = status === 'online' ? 'Online' : 
+                                      status === 'offline' ? 'Offline' : 'Unknown';
+                    const statusTextClass = `status-text-${status}`;
                     
                     endpointsHtml += `
                         <div class="health-endpoint-item">
                             <div class="health-endpoint-name">
-                                <span class="status-indicator status-${data.status || 'unknown'}"></span>
+                                <span class="status-indicator status-${status}"></span>
                                 ${data.name}
                             </div>
                             <span class="health-endpoint-status ${statusTextClass}">${statusText}</span>
@@ -769,7 +770,7 @@
             }
         }
 
-                async function updateStatsDisplay() {
+        async function updateStatsDisplay() {
             try {
                 const response = await fetch(`${BACKEND_URL}/stats`);
                 if (response.ok) {
