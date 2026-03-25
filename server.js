@@ -120,14 +120,17 @@ function getEndpointName(path) {
 }
 
 // ============================================
-// STATS SYSTEM
+// STATS SYSTEM - OPTIMIZED (Only today's visitors stored)
 // ============================================
 
 let stats = {
     apiCalls: 0,
-    visitors: {},
+    visitors: 0,           // Today's unique visitor count
+    totalVisitors: 0,      // Total unique visitors (all time)
+    visitorData: {},       // Only today's visitor hashes { hash: timestamp }
     endpointCalls: {},
-    lastUpdated: new Date().toISOString()
+    lastUpdated: new Date().toISOString(),
+    lastVisitorDate: null  // Track which day visitorData is for
 };
 
 // Track recently counted requests to prevent double counting
@@ -169,6 +172,55 @@ function wasRecentlyCounted(fingerprint) {
 }
 
 // ============================================
+// VISITOR ROLLING SYSTEM - Key optimization
+// ============================================
+
+function checkAndRollVisitors() {
+    const today = getTodayString();
+    
+    // If we have visitor data from a different day, roll it to total
+    if (stats.lastVisitorDate && stats.lastVisitorDate !== today) {
+        const yesterdayCount = Object.keys(stats.visitorData || {}).length;
+        stats.totalVisitors += yesterdayCount;
+        stats.visitors = 0;
+        stats.visitorData = {};
+        stats.lastVisitorDate = today;
+        
+        console.log(`[STATS] 🔄 Rolled visitors: ${yesterdayCount} from ${stats.lastVisitorDate} added to total (${stats.totalVisitors})`);
+        return true; // Indicates a roll happened
+    }
+    
+    // Initialize if first time
+    if (!stats.lastVisitorDate) {
+        stats.lastVisitorDate = today;
+    }
+    
+    return false;
+}
+
+function addVisitor(visitorHash) {
+    // Check if we need to roll to a new day
+    checkAndRollVisitors();
+    
+    const today = getTodayString();
+    
+    // Initialize visitor data for today if needed
+    if (!stats.visitorData) {
+        stats.visitorData = {};
+    }
+    
+    // Check if this is a new visitor for today
+    if (!stats.visitorData[visitorHash]) {
+        stats.visitorData[visitorHash] = new Date().toISOString();
+        stats.visitors = Object.keys(stats.visitorData).length;
+        stats.lastUpdated = new Date().toISOString();
+        return true; // New visitor
+    }
+    
+    return false; // Already counted today
+}
+
+// ============================================
 // HEALTH CHECK SYSTEM
 // ============================================
 
@@ -190,7 +242,7 @@ const ENDPOINTS_TO_CHECK = [
 ];
 
 // ============================================
-// GITHUB FUNCTIONS - STATS
+// GITHUB FUNCTIONS - STATS (Updated for new format)
 // ============================================
 
 async function testGitHubConnection() {
@@ -233,11 +285,56 @@ async function loadStatsFromGitHub() {
         const content = Buffer.from(data.content, 'base64').toString('utf8');
         const parsedStats = JSON.parse(content);
         
-        // Merge with validation
-        stats.apiCalls = parsedStats.apiCalls || 0;
-        stats.visitors = parsedStats.visitors || {};
-        stats.endpointCalls = parsedStats.endpointCalls || {};
-        stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
+        // Handle both old and new format
+        if (parsedStats.visitors && typeof parsedStats.visitors === 'object' && !Array.isArray(parsedStats.visitors)) {
+            // Old format detected - convert to new format
+            if (parsedStats.visitors['2026-03-23'] || parsedStats.visitors['2026-03-24']) {
+                console.log('[STATS] Converting from old format to new format...');
+                
+                // Calculate total from old format
+                let totalUniqueVisitors = 0;
+                Object.values(parsedStats.visitors).forEach(dayVisitors => {
+                    totalUniqueVisitors += Object.keys(dayVisitors).length;
+                });
+                
+                // Keep only today's data
+                const today = getTodayString();
+                const todayData = parsedStats.visitors[today] || {};
+                
+                stats = {
+                    apiCalls: parsedStats.apiCalls || 0,
+                    visitors: Object.keys(todayData).length,
+                    totalVisitors: totalUniqueVisitors,
+                    visitorData: todayData,
+                    endpointCalls: parsedStats.endpointCalls || {},
+                    lastUpdated: parsedStats.lastUpdated || new Date().toISOString(),
+                    lastVisitorDate: today
+                };
+                
+                console.log(`[STATS] Converted: ${stats.visitors} today, ${stats.totalVisitors} total`);
+            } else {
+                // Already new format or single day
+                stats.apiCalls = parsedStats.apiCalls || 0;
+                stats.visitors = parsedStats.visitors || 0;
+                stats.totalVisitors = parsedStats.totalVisitors || 0;
+                stats.visitorData = parsedStats.visitorData || {};
+                stats.endpointCalls = parsedStats.endpointCalls || {};
+                stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
+                stats.lastVisitorDate = parsedStats.lastVisitorDate || getTodayString();
+            }
+        } else {
+            // New format directly
+            stats.apiCalls = parsedStats.apiCalls || 0;
+            stats.visitors = parsedStats.visitors || 0;
+            stats.totalVisitors = parsedStats.totalVisitors || 0;
+            stats.visitorData = parsedStats.visitorData || {};
+            stats.endpointCalls = parsedStats.endpointCalls || {};
+            stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
+            stats.lastVisitorDate = parsedStats.lastVisitorDate || getTodayString();
+        }
+        
+        // Check if we need to roll visitors on load
+        checkAndRollVisitors();
         
         // Clean up old endpoint names if any
         const cleanedEndpoints = {};
@@ -249,9 +346,7 @@ async function loadStatsFromGitHub() {
         
         saveStatsToLocal();
         
-        const today = getTodayString();
-        const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
-        console.log(`[STATS] Loaded from GitHub: ${stats.apiCalls} calls, ${todayVisitors} visitors today`);
+        console.log(`[STATS] Loaded from GitHub: ${stats.apiCalls} calls, ${stats.visitors} visitors today, ${stats.totalVisitors} total`);
         console.log(`[STATS] Endpoints:`, stats.endpointCalls);
         return true;
     } catch (error) {
@@ -268,11 +363,17 @@ async function saveStatsToGitHub() {
     if (!githubEnabled || !octokit) return false;
 
     try {
+        // Check and roll visitors before saving
+        checkAndRollVisitors();
+        
         const statsData = {
             apiCalls: stats.apiCalls,
             visitors: stats.visitors,
+            totalVisitors: stats.totalVisitors,
+            visitorData: stats.visitorData,
             endpointCalls: stats.endpointCalls,
-            lastUpdated: new Date().toISOString()
+            lastUpdated: new Date().toISOString(),
+            lastVisitorDate: stats.lastVisitorDate
         };
 
         let sha = null;
@@ -293,14 +394,12 @@ async function saveStatsToGitHub() {
             owner: GITHUB_REPO_OWNER,
             repo: GITHUB_REPO_NAME,
             path: STATS_FILE,
-            message: `Update API stats - ${stats.apiCalls} calls`,
+            message: `Update API stats - ${stats.apiCalls} calls, ${stats.visitors} today, ${stats.totalVisitors} total`,
             content: contentEncoded,
             sha: sha || undefined,
         });
 
-        const today = getTodayString();
-        const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
-        console.log(`[STATS] ✅ Saved to GitHub: ${stats.apiCalls} calls, ${todayVisitors} visitors today`);
+        console.log(`[STATS] ✅ Saved to GitHub: ${stats.apiCalls} calls, ${stats.visitors} visitors today, ${stats.totalVisitors} total`);
         return true;
     } catch (error) {
         console.error('[STATS] ❌ Failed to save to GitHub:', error.message);
@@ -391,16 +490,22 @@ async function saveHealthToGitHub() {
 }
 
 // ============================================
-// LOCAL STORAGE FUNCTIONS
+// LOCAL STORAGE FUNCTIONS (Updated for new format)
 // ============================================
 
 function saveStatsToLocal() {
     try {
+        // Check and roll visitors before saving
+        checkAndRollVisitors();
+        
         const statsData = {
             apiCalls: stats.apiCalls,
             visitors: stats.visitors,
+            totalVisitors: stats.totalVisitors,
+            visitorData: stats.visitorData,
             endpointCalls: stats.endpointCalls,
-            lastUpdated: new Date().toISOString()
+            lastUpdated: new Date().toISOString(),
+            lastVisitorDate: stats.lastVisitorDate
         };
         fs.writeFileSync(`./${STATS_FILE}`, JSON.stringify(statsData, null, 2));
         return true;
@@ -416,10 +521,52 @@ function loadStatsFromLocal() {
             const content = fs.readFileSync(`./${STATS_FILE}`, 'utf8');
             const parsedStats = JSON.parse(content);
             
-            stats.apiCalls = parsedStats.apiCalls || 0;
-            stats.visitors = parsedStats.visitors || {};
-            stats.endpointCalls = parsedStats.endpointCalls || {};
-            stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
+            // Handle both old and new format
+            if (parsedStats.visitors && typeof parsedStats.visitors === 'object' && !Array.isArray(parsedStats.visitors)) {
+                // Old format detected - convert
+                if (parsedStats.visitors['2026-03-23'] || parsedStats.visitors['2026-03-24']) {
+                    console.log('[STATS] Converting local file from old format...');
+                    
+                    let totalUniqueVisitors = 0;
+                    Object.values(parsedStats.visitors).forEach(dayVisitors => {
+                        totalUniqueVisitors += Object.keys(dayVisitors).length;
+                    });
+                    
+                    const today = getTodayString();
+                    const todayData = parsedStats.visitors[today] || {};
+                    
+                    stats = {
+                        apiCalls: parsedStats.apiCalls || 0,
+                        visitors: Object.keys(todayData).length,
+                        totalVisitors: totalUniqueVisitors,
+                        visitorData: todayData,
+                        endpointCalls: parsedStats.endpointCalls || {},
+                        lastUpdated: parsedStats.lastUpdated || new Date().toISOString(),
+                        lastVisitorDate: today
+                    };
+                } else {
+                    // Already new format
+                    stats.apiCalls = parsedStats.apiCalls || 0;
+                    stats.visitors = parsedStats.visitors || 0;
+                    stats.totalVisitors = parsedStats.totalVisitors || 0;
+                    stats.visitorData = parsedStats.visitorData || {};
+                    stats.endpointCalls = parsedStats.endpointCalls || {};
+                    stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
+                    stats.lastVisitorDate = parsedStats.lastVisitorDate || getTodayString();
+                }
+            } else {
+                // New format directly
+                stats.apiCalls = parsedStats.apiCalls || 0;
+                stats.visitors = parsedStats.visitors || 0;
+                stats.totalVisitors = parsedStats.totalVisitors || 0;
+                stats.visitorData = parsedStats.visitorData || {};
+                stats.endpointCalls = parsedStats.endpointCalls || {};
+                stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
+                stats.lastVisitorDate = parsedStats.lastVisitorDate || getTodayString();
+            }
+            
+            // Check if we need to roll visitors
+            checkAndRollVisitors();
             
             // Clean up old endpoint names
             const cleanedEndpoints = {};
@@ -429,9 +576,7 @@ function loadStatsFromLocal() {
             });
             stats.endpointCalls = cleanedEndpoints;
             
-            const today = getTodayString();
-            const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
-            console.log(`[STATS] Loaded from local: ${stats.apiCalls} calls, ${todayVisitors} visitors today`);
+            console.log(`[STATS] Loaded from local: ${stats.apiCalls} calls, ${stats.visitors} today, ${stats.totalVisitors} total`);
             return true;
         }
     } catch (error) {
@@ -708,7 +853,7 @@ app.use('/download', limiter);
 app.use('/search', limiter);
 
 // ============================================
-// API CALL TRACKING MIDDLEWARE
+// API CALL TRACKING MIDDLEWARE (Updated)
 // ============================================
 
 app.use(['/download', '/search'], async (req, res, next) => {
@@ -732,12 +877,9 @@ app.use(['/download', '/search'], async (req, res, next) => {
         stats.endpointCalls[endpointName] = (stats.endpointCalls[endpointName] || 0) + 1;
         stats.lastUpdated = new Date().toISOString();
 
-        // Track visitor
-        const today = getTodayString();
-        if (!stats.visitors[today]) stats.visitors[today] = {};
+        // Track visitor using new system
         const visitorHash = crypto.createHash('sha256').update(clientIp).digest('hex').substring(0, 16);
-        const isNewVisitor = !stats.visitors[today][visitorHash];
-        stats.visitors[today][visitorHash] = new Date().toISOString();
+        const isNewVisitor = addVisitor(visitorHash);
 
         console.log(`[API CALL] ➜ ${endpointName} | Total: ${stats.apiCalls} | New Visitor: ${isNewVisitor ? 'Yes' : 'No'}`);
 
@@ -761,22 +903,21 @@ app.get('/health', (req, res) => {
 });
 
 // ============================================
-// STATS ENDPOINTS
+// STATS ENDPOINTS (Updated for new format)
 // ============================================
 
 app.get('/stats', (req, res) => {
-  const today = getTodayString();
-  const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
+  // Check and roll visitors before responding
+  checkAndRollVisitors();
   
-  let totalUniqueVisitors = 0;
-  Object.values(stats.visitors).forEach(dayVisitors => {
-    totalUniqueVisitors += Object.keys(dayVisitors).length;
-  });
+  // Calculate total visitors (today + historical)
+  const todayCount = stats.visitors || 0;
+  const totalCount = (stats.totalVisitors || 0) + todayCount;
   
   res.json({
     apiCalls: stats.apiCalls,
-    visitors: todayVisitors,
-    totalVisitors: totalUniqueVisitors,
+    visitors: todayCount,           // Today only
+    totalVisitors: totalCount,      // All time
     endpointCalls: stats.endpointCalls,
     lastUpdated: stats.lastUpdated,
     githubBackup: githubEnabled,
@@ -800,26 +941,28 @@ app.get('/health/status', (req, res) => {
 // Frontend visitor tracking only (no API call tracking here)
 app.post('/stats/increment', (req, res) => {
   const { type, visitorId } = req.body;
-  const today = getTodayString();
   
   if (type === 'visitor') {
     const clientIp = req.headers['x-forwarded-for'] || req.ip || 'unknown';
     const vid = visitorId || clientIp;
     const visitorHash = crypto.createHash('sha256').update(vid).digest('hex').substring(0, 16);
     
-    if (!stats.visitors[today]) stats.visitors[today] = {};
-    const isNewVisitor = !stats.visitors[today][visitorHash];
-    stats.visitors[today][visitorHash] = new Date().toISOString();
+    // Add visitor using new system
+    const isNewVisitor = addVisitor(visitorHash);
     
-    // Clean old data (30 days)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    Object.keys(stats.visitors).forEach(date => {
-        if (new Date(date) < thirtyDaysAgo) delete stats.visitors[date];
+    // Calculate totals
+    const todayCount = stats.visitors || 0;
+    const totalCount = (stats.totalVisitors || 0) + todayCount;
+    
+    res.json({ 
+        success: true, 
+        isNewVisitor, 
+        stats: { 
+            apiCalls: stats.apiCalls, 
+            visitors: todayCount,
+            totalVisitors: totalCount
+        } 
     });
-    
-    const todayCount = Object.keys(stats.visitors[today]).length;
-    res.json({ success: true, isNewVisitor, stats: { apiCalls: stats.apiCalls, visitors: todayCount } });
   } else {
     res.status(400).json({ success: false, message: 'Invalid type' });
   }
@@ -981,8 +1124,8 @@ async function startServer() {
     
     // IMPORTANT: Bind to 0.0.0.0 for Koyeb
     app.listen(PORT, '0.0.0.0', async () => {
-        const today = getTodayString();
-        const todayVisitors = stats.visitors[today] ? Object.keys(stats.visitors[today]).length : 0;
+        // Check and roll visitors on startup
+        checkAndRollVisitors();
         
         // Perform initial health check if never checked or missed
         const now = getSriLankanTime();
@@ -996,13 +1139,16 @@ async function startServer() {
         // Start daily scheduler
         startDailyHealthCheckScheduler();
         
+        const todayCount = stats.visitors || 0;
+        const totalCount = (stats.totalVisitors || 0) + todayCount;
+        
         console.log(`
 ╔══════════════════════════════════════════╗
 ║           SRI API V3.0                   ║
 ║       Server running on port ${PORT}        ║
 ║   URL: ${WEBSITE_URL.padEnd(28)}      ║
 ║                                          ║
-║  Stats: ${stats.apiCalls} calls, ${todayVisitors} visitors today    ║
+║  Stats: ${stats.apiCalls} calls, ${todayCount} today, ${totalCount} total    ║
 ║  Health: ${healthStatus.summary.online}/${healthStatus.summary.total} online              ║
 ║  GitHub Backup: ${githubEnabled ? 'ENABLED ✅' : 'DISABLED ❌'}      ║
 ║  Local Backup: ENABLED ✅                ║
