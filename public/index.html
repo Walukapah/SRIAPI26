@@ -506,7 +506,7 @@
         let currentCategory = null, currentEndpoint = null, currentResponse = null, currentTab = 'curl', sidebarSearchQuery = '', isShowingAllApis = false;
 
         // ============================================
-        // STATS SYSTEM - Prevent Double Counting
+        // STATS SYSTEM - Prevent Double Counting - FIXED
         // ============================================
         
         const STATS_CONFIG = {
@@ -517,6 +517,10 @@
         };
 
         const pendingApiCalls = new Set();
+
+        // Flag to prevent multiple initializations
+        let statsInitialized = false;
+        let visitorTracked = false;
 
         async function getClientIP() {
             try {
@@ -577,8 +581,21 @@
         }
 
         async function initStats() {
+            // Prevent double initialization
+            if (statsInitialized) {
+                console.log('[STATS] Already initialized, skipping');
+                return;
+            }
+            statsInitialized = true;
+            
             const clientIP = await getClientIP();
-            await trackDailyUniqueVisitor(clientIP);
+            
+            // Only track visitor once per session
+            if (!visitorTracked) {
+                await trackDailyUniqueVisitor(clientIP);
+                visitorTracked = true;
+            }
+            
             await updateStatsDisplay();
         }
 
@@ -587,10 +604,18 @@
             const lastVisitDate = localStorage.getItem(STATS_CONFIG.visitorDateKey);
             const storedIp = localStorage.getItem(STATS_CONFIG.visitorIdKey);
             
+            // Check if already tracked in this session (using sessionStorage)
+            const sessionTracked = sessionStorage.getItem('sri_api_visitor_tracked');
+            if (sessionTracked === 'true') {
+                console.log('[STATS] Visitor already tracked in this session');
+                return;
+            }
+            
             const isNewDay = lastVisitDate !== today;
             const isDifferentIP = storedIp !== ip;
             
-            if (isNewDay || isDifferentIP) {
+            // Only track if new day OR different IP OR never tracked before
+            if (isNewDay || isDifferentIP || !lastVisitDate) {
                 try {
                     const response = await fetch(`${BACKEND_URL}/stats/increment`, {
                         method: 'POST',
@@ -603,8 +628,16 @@
                     if (result.success) {
                         localStorage.setItem(STATS_CONFIG.visitorDateKey, today);
                         localStorage.setItem(STATS_CONFIG.visitorIdKey, ip);
+                        sessionStorage.setItem('sri_api_visitor_tracked', 'true');
+                        console.log('[STATS] Visitor tracked successfully');
                     }
-                } catch (e) {}
+                } catch (e) {
+                    console.log('[STATS] Failed to track visitor:', e.message);
+                }
+            } else {
+                // Mark as tracked even if not sent to server (same day, same IP)
+                sessionStorage.setItem('sri_api_visitor_tracked', 'true');
+                console.log('[STATS] Visitor already counted today');
             }
         }
 
@@ -634,45 +667,60 @@
         }
 
         // ============================================
-        // HEALTH STATUS FROM BACKEND
+        // HEALTH STATUS FROM BACKEND - FIXED
         // ============================================
 
         async function loadHealthStatusFromBackend() {
             try {
                 const response = await fetch(`${BACKEND_URL}/health/status`);
-                if (response.ok) {
-                    const healthData = await response.json();
-                    
-                    // Update health check panel
-                    updateHealthCheckPanel(healthData);
-                    
-                    // Update endpoint statuses in apiData
-                    if (healthData.endpoints) {
-                        Object.keys(apiData).forEach(categoryKey => {
-                            apiData[categoryKey].endpoints.forEach(endpoint => {
-                                const healthEndpoint = Object.values(healthData.endpoints).find(
-                                    he => he.path === endpoint.path || he.name === endpoint.name
-                                );
-                                if (healthEndpoint) {
-                                    endpoint.status = healthEndpoint.status;
-                                } else {
-                                    endpoint.status = 'offline';
-                                }
-                            });
-                        });
-                    }
-                    
-                    // Re-render sidebar with updated statuses
-                    renderSidebar();
-                    
-                    console.log('[HEALTH] Loaded from backend:', healthData.summary);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
+                
+                const healthData = await response.json();
+                
+                // Update health check panel with proper time display
+                updateHealthCheckPanel(healthData);
+                
+                // Update endpoint statuses in apiData
+                if (healthData.endpoints) {
+                    Object.keys(apiData).forEach(categoryKey => {
+                        apiData[categoryKey].endpoints.forEach(endpoint => {
+                            // Find matching endpoint in health data
+                            let healthEndpoint = null;
+                            
+                            // Check by path first
+                            healthEndpoint = Object.values(healthData.endpoints).find(
+                                he => he.path === endpoint.path
+                            );
+                            
+                            // If not found by path, check by name
+                            if (!healthEndpoint) {
+                                healthEndpoint = Object.values(healthData.endpoints).find(
+                                    he => he.name === endpoint.name
+                                );
+                            }
+                            
+                            if (healthEndpoint && healthEndpoint.status) {
+                                endpoint.status = healthEndpoint.status;
+                            } else {
+                                endpoint.status = 'offline';
+                            }
+                        });
+                    });
+                }
+                
+                // Re-render sidebar with updated statuses
+                renderSidebar();
+                
+                console.log('[HEALTH] Loaded from backend:', healthData.summary);
+                
             } catch (e) {
-                console.log('[HEALTH] Failed to load from backend');
-                // If backend fails, show all as offline
+                console.log('[HEALTH] Failed to load from backend:', e.message);
+                // If backend fails, show all as checking (not offline)
                 Object.keys(apiData).forEach(categoryKey => {
                     apiData[categoryKey].endpoints.forEach(endpoint => {
-                        endpoint.status = 'offline';
+                        endpoint.status = 'checking';
                     });
                 });
                 renderSidebar();
@@ -685,15 +733,15 @@
             const nextEl = document.getElementById('healthCheckNext');
             
             let statusClass = 'status-checking';
-            let message = 'Unknown';
+            let message = 'Checking...';
             
-            if (healthData.summary) {
+            if (healthData && healthData.summary) {
                 const { online, total } = healthData.summary;
                 message = `${online}/${total} APIs Online`;
                 
-                if (online === total) {
+                if (online === total && total > 0) {
                     statusClass = 'status-online';
-                } else if (online === 0) {
+                } else if (online === 0 && total > 0) {
                     statusClass = 'status-offline';
                 } else {
                     statusClass = 'status-checking';
@@ -702,13 +750,17 @@
             
             statusEl.innerHTML = `<span class="status-indicator ${statusClass}"></span><span>${message}</span>`;
             
-            if (healthData.lastCheckTime) {
+            // Handle last check time display
+            if (healthData && healthData.lastCheckTime && healthData.lastCheckTime !== '--') {
                 timeEl.textContent = `Last checked: ${healthData.lastCheckTime}`;
+            } else if (healthData && healthData.lastCheckDate) {
+                timeEl.textContent = `Last checked: ${healthData.lastCheckDate}`;
             } else {
                 timeEl.textContent = 'Last checked: Never';
             }
             
-            if (healthData.nextCheckTime) {
+            // Handle next check time display
+            if (healthData && healthData.nextCheckTime && healthData.nextCheckTime !== '--') {
                 nextEl.textContent = `Next check: ${healthData.nextCheckTime}`;
             } else {
                 nextEl.textContent = 'Next check: Today at 12:00 AM';
