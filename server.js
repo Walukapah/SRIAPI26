@@ -94,7 +94,7 @@ if (GITHUB_TOKEN && GITHUB_TOKEN.length > 10 && !GITHUB_TOKEN.includes('your')) 
     console.warn('[GITHUB] GITHUB_TOKEN not set, too short, or contains placeholder text');
 }
 
-const STATS_FILE = 'api_stats.json';
+const STATS_FILE = 'api_stats2.json';
 const HEALTH_FILE = 'api_health.json';
 
 // ============================================
