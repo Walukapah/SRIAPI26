@@ -214,10 +214,45 @@ function addVisitor(visitorHash) {
         stats.visitorData[visitorHash] = new Date().toISOString();
         stats.visitors = Object.keys(stats.visitorData).length;
         stats.lastUpdated = new Date().toISOString();
+        
+        // Broadcast update to all connected clients
+        broadcastStatsUpdate();
+        
         return true; // New visitor
     }
     
     return false; // Already counted today
+}
+
+// ============================================
+// LIVE UPDATE SYSTEM - Server-Sent Events
+// ============================================
+
+const sseClients = new Set();
+
+function broadcastStatsUpdate() {
+    const todayCount = stats.visitors || 0;
+    const totalCount = (stats.totalVisitors || 0) + todayCount;
+    
+    const updateData = {
+        apiCalls: stats.apiCalls,
+        visitors: todayCount,
+        totalVisitors: totalCount,
+        endpointCalls: stats.endpointCalls,
+        lastUpdated: stats.lastUpdated,
+        timestamp: new Date().toISOString()
+    };
+    
+    // Broadcast to all connected SSE clients
+    sseClients.forEach(client => {
+        try {
+            client.write(`data: ${JSON.stringify(updateData)}\n\n`);
+        } catch (e) {
+            // Client disconnected, will be cleaned up
+        }
+    });
+    
+    console.log(`[LIVE] Broadcasting stats: ${updateData.apiCalls} calls, ${totalCount} visitors (${sseClients.size} clients)`);
 }
 
 // ============================================
@@ -242,7 +277,7 @@ const ENDPOINTS_TO_CHECK = [
 ];
 
 // ============================================
-// GITHUB FUNCTIONS - STATS (Updated for new format)
+// GITHUB FUNCTIONS - STATS
 // ============================================
 
 async function testGitHubConnection() {
@@ -490,7 +525,7 @@ async function saveHealthToGitHub() {
 }
 
 // ============================================
-// LOCAL STORAGE FUNCTIONS (Updated for new format)
+// LOCAL STORAGE FUNCTIONS
 // ============================================
 
 function saveStatsToLocal() {
@@ -634,7 +669,7 @@ function startAutoSave() {
 }
 
 // ============================================
-// DAILY HEALTH CHECK SYSTEM - FIXED
+// DAILY HEALTH CHECK SYSTEM
 // ============================================
 
 function getSriLankanTime() {
@@ -853,7 +888,7 @@ app.use('/download', limiter);
 app.use('/search', limiter);
 
 // ============================================
-// API CALL TRACKING MIDDLEWARE (Updated)
+// API CALL TRACKING MIDDLEWARE
 // ============================================
 
 app.use(['/download', '/search'], async (req, res, next) => {
@@ -877,11 +912,10 @@ app.use(['/download', '/search'], async (req, res, next) => {
         stats.endpointCalls[endpointName] = (stats.endpointCalls[endpointName] || 0) + 1;
         stats.lastUpdated = new Date().toISOString();
 
-        // Track visitor using new system
-        const visitorHash = crypto.createHash('sha256').update(clientIp).digest('hex').substring(0, 16);
-        const isNewVisitor = addVisitor(visitorHash);
+        console.log(`[API CALL] ➜ ${endpointName} | Total: ${stats.apiCalls}`);
 
-        console.log(`[API CALL] ➜ ${endpointName} | Total: ${stats.apiCalls} | New Visitor: ${isNewVisitor ? 'Yes' : 'No'}`);
+        // Broadcast live update
+        broadcastStatsUpdate();
 
         saveStatsToLocal();
         if (githubEnabled) saveStatsToGitHub().catch(() => {});
@@ -903,7 +937,7 @@ app.get('/health', (req, res) => {
 });
 
 // ============================================
-// STATS ENDPOINTS (Updated for new format)
+// STATS ENDPOINTS (Updated for Live Updates)
 // ============================================
 
 app.get('/stats', (req, res) => {
@@ -925,6 +959,48 @@ app.get('/stats', (req, res) => {
   });
 });
 
+// NEW: Server-Sent Events endpoint for live stats
+app.get('/stats/stream', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    
+    // Send initial data
+    const todayCount = stats.visitors || 0;
+    const totalCount = (stats.totalVisitors || 0) + todayCount;
+    
+    const sendData = () => {
+        const data = {
+            apiCalls: stats.apiCalls,
+            visitors: todayCount,
+            totalVisitors: totalCount,
+            endpointCalls: stats.endpointCalls,
+            timestamp: new Date().toISOString()
+        };
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+    
+    sendData();
+    
+    // Add client to broadcast list
+    sseClients.add(res);
+    
+    // Send heartbeat every 30 seconds to keep connection alive
+    const heartbeat = setInterval(() => {
+        res.write(':heartbeat\n\n');
+    }, 30000);
+    
+    // Clean up on disconnect
+    req.on('close', () => {
+        clearInterval(heartbeat);
+        sseClients.delete(res);
+        console.log(`[LIVE] Client disconnected. Total clients: ${sseClients.size}`);
+    });
+    
+    console.log(`[LIVE] New client connected. Total clients: ${sseClients.size}`);
+});
+
 // Health status endpoint for frontend
 app.get('/health/status', (req, res) => {
     res.json({
@@ -938,7 +1014,33 @@ app.get('/health/status', (req, res) => {
     });
 });
 
-// Frontend visitor tracking only (no API call tracking here)
+// NEW: Dedicated visitor tracking endpoint (on page load)
+app.post('/stats/visitor', (req, res) => {
+  const { visitorId, fingerprint } = req.body;
+  
+  const clientIp = req.headers['x-forwarded-for'] || req.ip || 'unknown';
+  const vid = visitorId || fingerprint || clientIp;
+  const visitorHash = crypto.createHash('sha256').update(vid).digest('hex').substring(0, 16);
+  
+  // Add visitor using new system
+  const isNewVisitor = addVisitor(visitorHash);
+  
+  // Calculate totals
+  const todayCount = stats.visitors || 0;
+  const totalCount = (stats.totalVisitors || 0) + todayCount;
+  
+  res.json({ 
+      success: true, 
+      isNewVisitor, 
+      stats: { 
+          apiCalls: stats.apiCalls, 
+          visitors: todayCount,
+          totalVisitors: totalCount
+      } 
+  });
+});
+
+// Keep old endpoint for backward compatibility
 app.post('/stats/increment', (req, res) => {
   const { type, visitorId } = req.body;
   
@@ -1152,6 +1254,7 @@ async function startServer() {
 ║  Health: ${healthStatus.summary.online}/${healthStatus.summary.total} online              ║
 ║  GitHub Backup: ${githubEnabled ? 'ENABLED ✅' : 'DISABLED ❌'}      ║
 ║  Local Backup: ENABLED ✅                ║
+║  Live Updates: ENABLED ✅              ║
 ║                                          ║
 ║  Endpoints:                              ║
 ║  • /download/youtubedl                   ║
@@ -1163,6 +1266,7 @@ async function startServer() {
 ║                                          ║
 ║  Health: /health                         ║
 ║  Stats:   /stats                         ║
+║  Live:    /stats/stream                  ║
 ╚══════════════════════════════════════════╝
         `);
     });
