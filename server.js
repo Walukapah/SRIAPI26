@@ -94,7 +94,7 @@ if (GITHUB_TOKEN && GITHUB_TOKEN.length > 10 && !GITHUB_TOKEN.includes('your')) 
     console.warn('[GITHUB] GITHUB_TOKEN not set, too short, or contains placeholder text');
 }
 
-const STATS_FILE = 'api_stats.json';
+const STATS_FILE = 'api_stats2.json';
 const HEALTH_FILE = 'api_health.json';
 
 // ============================================
@@ -136,6 +136,10 @@ let stats = {
 // Track recently counted requests to prevent double counting
 const recentRequests = new Map();
 const REQUEST_CACHE_TIMEOUT = 5000; // 5 seconds
+
+// Track recent visitors to prevent duplicate counting (in-memory, per server instance)
+const recentVisitors = new Map();
+const VISITOR_COOLDOWN = 60000; // 1 minute cooldown for same visitor
 
 function getTodayString() {
     return new Date().toISOString().split('T')[0];
@@ -1014,30 +1018,87 @@ app.get('/health/status', (req, res) => {
     });
 });
 
+// ============================================
+// VISITOR TRACKING - IMMEDIATE ON PAGE LOAD
+// ============================================
+
 // NEW: Dedicated visitor tracking endpoint (on page load)
-app.post('/stats/visitor', (req, res) => {
-  const { visitorId, fingerprint } = req.body;
-  
-  const clientIp = req.headers['x-forwarded-for'] || req.ip || 'unknown';
-  const vid = visitorId || fingerprint || clientIp;
-  const visitorHash = crypto.createHash('sha256').update(vid).digest('hex').substring(0, 16);
-  
-  // Add visitor using new system
-  const isNewVisitor = addVisitor(visitorHash);
-  
-  // Calculate totals
-  const todayCount = stats.visitors || 0;
-  const totalCount = (stats.totalVisitors || 0) + todayCount;
-  
-  res.json({ 
-      success: true, 
-      isNewVisitor, 
-      stats: { 
-          apiCalls: stats.apiCalls, 
-          visitors: todayCount,
-          totalVisitors: totalCount
-      } 
-  });
+app.post('/stats/visitor', async (req, res) => {
+    try {
+        const { visitorId, fingerprint, userAgent, referrer } = req.body;
+        
+        const clientIp = req.headers['x-forwarded-for'] || req.ip || 'unknown';
+        const vid = visitorId || fingerprint || clientIp;
+        
+        // Create unique key for this visitor (IP + VisitorID combination)
+        const visitorKey = `${clientIp}:${vid}`;
+        const now = Date.now();
+        
+        // Check if this visitor was recently counted (cooldown period)
+        const lastVisit = recentVisitors.get(visitorKey);
+        if (lastVisit && (now - lastVisit) < VISITOR_COOLDOWN) {
+            console.log(`[VISITOR] Skipped (cooldown): ${vid.substring(0, 16)}...`);
+            
+            // Still return current stats
+            const todayCount = stats.visitors || 0;
+            const totalCount = (stats.totalVisitors || 0) + todayCount;
+            
+            return res.json({ 
+                success: true, 
+                isNewVisitor: false,
+                skipped: true,
+                reason: 'cooldown',
+                stats: { 
+                    apiCalls: stats.apiCalls, 
+                    visitors: todayCount,
+                    totalVisitors: totalCount
+                } 
+            });
+        }
+        
+        // Update recent visitors map
+        recentVisitors.set(visitorKey, now);
+        
+        // Clean up old entries periodically
+        if (recentVisitors.size > 1000) {
+            const cutoff = now - VISITOR_COOLDOWN;
+            for (const [key, timestamp] of recentVisitors.entries()) {
+                if (timestamp < cutoff) {
+                    recentVisitors.delete(key);
+                }
+            }
+        }
+        
+        // Create hash for storage
+        const visitorHash = crypto.createHash('sha256').update(vid).digest('hex').substring(0, 16);
+        
+        // Add visitor (this will check if already counted today)
+        const isNewVisitor = addVisitor(visitorHash);
+        
+        // Calculate totals
+        const todayCount = stats.visitors || 0;
+        const totalCount = (stats.totalVisitors || 0) + todayCount;
+        
+        console.log(`[VISITOR] Tracked: ${vid.substring(0, 16)}... | New: ${isNewVisitor} | Total: ${totalCount}`);
+        
+        res.json({ 
+            success: true, 
+            isNewVisitor: isNewVisitor,
+            stats: { 
+                apiCalls: stats.apiCalls, 
+                visitors: todayCount,
+                totalVisitors: totalCount
+            } 
+        });
+        
+    } catch (error) {
+        console.error('[VISITOR] Error:', error.message);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Failed to track visitor',
+            error: error.message
+        });
+    }
 });
 
 // Keep old endpoint for backward compatibility
@@ -1255,6 +1316,7 @@ async function startServer() {
 ║  GitHub Backup: ${githubEnabled ? 'ENABLED ✅' : 'DISABLED ❌'}      ║
 ║  Local Backup: ENABLED ✅                ║
 ║  Live Updates: ENABLED ✅              ║
+║  Immediate Visitor Count: ENABLED ✅     ║
 ║                                          ║
 ║  Endpoints:                              ║
 ║  • /download/youtubedl                   ║
@@ -1267,6 +1329,7 @@ async function startServer() {
 ║  Health: /health                         ║
 ║  Stats:   /stats                         ║
 ║  Live:    /stats/stream                  ║
+║  Visitor: /stats/visitor (POST)          ║
 ╚══════════════════════════════════════════╝
         `);
     });
