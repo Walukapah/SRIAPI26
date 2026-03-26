@@ -24,10 +24,13 @@
         .nav-right { display: flex; align-items: center; gap: 16px; }
         
         .nav-stats { display: flex; align-items: center; gap: 12px; }
-        .stat-item { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 100px; font-size: 12px; font-weight: 600; color: var(--text-secondary); transition: all 0.2s; }
+        .stat-item { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 100px; font-size: 12px; font-weight: 600; color: var(--text-secondary); transition: all 0.2s; position: relative; overflow: hidden; }
         .stat-item:hover { background: var(--hover); border-color: var(--accent); color: var(--text-primary); }
+        .stat-item.updating { animation: pulse-border 0.5s ease; }
+        @keyframes pulse-border { 0% { border-color: var(--accent); box-shadow: 0 0 0 0 rgba(0,0,0,0.1); } 50% { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(0,0,0,0.05); } 100% { border-color: var(--border); box-shadow: 0 0 0 0 rgba(0,0,0,0); } }
         .stat-icon { width: 14px; height: 14px; color: var(--accent); }
-        .stat-value { color: var(--accent); font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+        .stat-value { color: var(--accent); font-family: 'JetBrains Mono', monospace; font-weight: 700; transition: all 0.3s ease; }
+        .stat-value.changed { color: #22c55e; transform: scale(1.1); }
         
         @media (max-width: 768px) { 
             .navbar { padding: 0 12px; }
@@ -254,6 +257,13 @@
         .health-check-status { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 8px; }
         .health-check-time { font-size: 11px; color: var(--text-secondary); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
         .health-check-next { font-size: 11px; color: var(--text-secondary); margin-top: 6px; font-style: italic; }
+        
+        /* Live indicator animation */
+        .live-indicator { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #22c55e; margin-left: 8px; }
+        .live-dot { width: 6px; height: 6px; background: #22c55e; border-radius: 50%; animation: live-pulse 1.5s ease-in-out infinite; }
+        @keyframes live-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.8); } }
+        .live-indicator.offline { color: var(--text-secondary); }
+        .live-indicator.offline .live-dot { background: var(--text-secondary); animation: none; }
     </style>
 </head>
 <body>
@@ -270,14 +280,18 @@
         </div>
         <div class="nav-right">
             <div class="nav-stats">
-                <div class="stat-item" title="Total API Calls">
+                <div class="stat-item" id="apiCallsStat" title="Total API Calls">
                     <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
                     </svg>
                     <span class="stat-value" id="apiCallsCounter">0</span>
                     <span>Calls</span>
+                    <span class="live-indicator" id="liveIndicator">
+                        <span class="live-dot"></span>
+                        <span id="liveText">Live</span>
+                    </span>
                 </div>
-                <div class="stat-item" title="Total Visitors">
+                <div class="stat-item" id="visitorsStat" title="Total Visitors">
                     <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
                         <circle cx="9" cy="7" r="4"></circle>
@@ -506,715 +520,886 @@
         let currentCategory = null, currentEndpoint = null, currentResponse = null, currentTab = 'curl', sidebarSearchQuery = '', isShowingAllApis = false;
 
         // ============================================
-        // STATS SYSTEM - Prevent Double Counting - FIXED
+        // LIVE STATS SYSTEM - Real-time Updates
         // ============================================
-        
-        const STATS_CONFIG = {
-            visitorDateKey: 'sri_api_visitor_date',
-            visitorIdKey: 'sri_api_visitor_id',
-            visitorIpKey: 'sri_api_visitor_ip',
-            lastIpFetch: 'sri_api_last_ip_fetch'
-        };
 
-        const pendingApiCalls = new Set();
+        class LiveStatsManager {
+            constructor() {
+                this.eventSource = null;
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 5;
+                this.reconnectDelay = 3000;
+                this.isConnected = false;
+                this.lastStats = null;
+                this.pollingInterval = null;
+            }
 
-        // Flag to prevent multiple initializations
-        let statsInitialized = false;
-        let visitorTracked = false;
-
-        async function getClientIP() {
-            try {
-                const lastFetch = localStorage.getItem(STATS_CONFIG.lastIpFetch);
-                const cachedIp = localStorage.getItem(STATS_CONFIG.visitorIpKey);
-                const today = new Date().toISOString().split('T')[0];
-                
-                if (lastFetch === today && cachedIp) {
-                    return cachedIp;
+            connect() {
+                // Try Server-Sent Events first
+                if (typeof EventSource !== 'undefined') {
+                    this.connectSSE();
+                } else {
+                    this.startPolling();
                 }
-                
-                const response = await fetch('https://api.ipify.org?format=json');
-                const data = await response.json();
-                
-                if (data && data.ip) {
-                    localStorage.setItem(STATS_CONFIG.visitorIpKey, data.ip);
-                    localStorage.setItem(STATS_CONFIG.lastIpFetch, today);
-                    return data.ip;
+            }
+
+            connectSSE() {
+                if (this.eventSource) {
+                    this.eventSource.close();
                 }
-            } catch (e) {
+
                 try {
-                    const response = await fetch('https://ipinfo.io/json');
-                    const data = await response.json();
-                    if (data && data.ip) {
-                        const today = new Date().toISOString().split('T')[0];
-                        localStorage.setItem(STATS_CONFIG.visitorIpKey, data.ip);
-                        localStorage.setItem(STATS_CONFIG.lastIpFetch, today);
-                        return data.ip;
+                    console.log('[LIVE] Connecting to SSE stream...');
+                    this.eventSource = new EventSource(`${BACKEND_URL}/stats/stream`);
+
+                    this.eventSource.onopen = () => {
+                        console.log('[LIVE] SSE Connected');
+                        this.isConnected = true;
+                        this.reconnectAttempts = 0;
+                        this.updateLiveIndicator(true);
+                    };
+
+                    this.eventSource.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            this.handleUpdate(data);
+                        } catch (e) {
+                            console.error('[LIVE] Parse error:', e);
+                        }
+                    };
+
+                    this.eventSource.onerror = (error) => {
+                        console.log('[LIVE] SSE error, switching to polling');
+                        this.isConnected = false;
+                        this.updateLiveIndicator(false);
+                        this.eventSource.close();
+                        
+                        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                            this.reconnectAttempts++;
+                            setTimeout(() => this.connectSSE(), this.reconnectDelay);
+                        } else {
+                            this.startPolling();
+                        }
+                    };
+
+                } catch (e) {
+                    console.log('[LIVE] SSE not supported, using polling');
+                    this.startPolling();
+                }
+            }
+
+            startPolling() {
+                console.log('[LIVE] Starting polling fallback');
+                this.updateLiveIndicator(false);
+                
+                // Clear existing polling
+                if (this.pollingInterval) {
+                    clearInterval(this.pollingInterval);
+                }
+                
+                // Poll every 5 seconds
+                this.pollingInterval = setInterval(() => {
+                    this.fetchStats();
+                }, 5000);
+                
+                // Initial fetch
+                this.fetchStats();
+            }
+
+            handleUpdate(data) {
+                if (!data || typeof data.apiCalls === 'undefined') return;
+                
+                // Check if values actually changed
+                const hasChanged = !this.lastStats || 
+                    this.lastStats.apiCalls !== data.apiCalls || 
+                    this.lastStats.totalVisitors !== data.totalVisitors;
+                
+                if (hasChanged) {
+                    this.updateDisplay(data);
+                    this.lastStats = data;
+                }
+            }
+
+            updateDisplay(data) {
+                const apiCallsEl = document.getElementById('apiCallsCounter');
+                const visitorsEl = document.getElementById('visitorsCounter');
+                const apiCallsStat = document.getElementById('apiCallsStat');
+                const visitorsStat = document.getElementById('visitorsStat');
+                
+                if (apiCallsEl) {
+                    const oldValue = parseInt(apiCallsEl.textContent.replace(/[^0-9]/g, '')) || 0;
+                    const newValue = data.apiCalls || 0;
+                    
+                    if (oldValue !== newValue) {
+                        this.animateNumber(apiCallsEl, oldValue, newValue);
+                        this.highlightUpdate(apiCallsStat);
                     }
-                } catch (e2) {}
+                }
+                
+                if (visitorsEl) {
+                    const oldValue = parseInt(visitorsEl.textContent.replace(/[^0-9]/g, '')) || 0;
+                    const newValue = data.totalVisitors || 0;
+                    
+                    if (oldValue !== newValue) {
+                        this.animateNumber(visitorsEl, oldValue, newValue);
+                        this.highlightUpdate(visitorsStat);
+                    }
+                }
             }
-            
-            const fallbackId = generateBrowserFingerprint();
-            return fallbackId;
-        }
-        
-        function generateBrowserFingerprint() {
-            const components = [
-                navigator.userAgent,
-                navigator.language,
-                screen.colorDepth,
-                screen.width + 'x' + screen.height,
-                new Date().getTimezoneOffset(),
-                !!window.sessionStorage,
-                !!window.localStorage,
-                navigator.hardwareConcurrency || 'unknown',
-                navigator.deviceMemory || 'unknown'
-            ];
-            
-            const fingerprint = components.join('|||');
-            let hash = 0;
-            for (let i = 0; i < fingerprint.length; i++) {
-                const char = fingerprint.charCodeAt(i);
-                hash = ((hash << 5) - hash) + char;
-                hash = hash & hash;
-            }
-            return 'fp_' + Math.abs(hash).toString(16);
-        }
 
-        async function initStats() {
-            // Prevent double initialization
-            if (statsInitialized) {
-                console.log('[STATS] Already initialized, skipping');
-                return;
+            animateNumber(element, from, to) {
+                if (from === to) {
+                    element.textContent = this.formatNumber(to);
+                    return;
+                }
+                
+                const duration = 600;
+                const start = performance.now();
+                
+                const animate = (currentTime) => {
+                    const elapsed = currentTime - start;
+                    const progress = Math.min(elapsed / duration, 1);
+                    
+                    // Easing function - easeOutQuart
+                    const easeOutQuart = 1 - Math.pow(1 - progress, 4);
+                    const current = Math.floor(from + (to - from) * easeOutQuart);
+                    
+                    element.textContent = this.formatNumber(current);
+                    
+                    if (progress < 1) {
+                        requestAnimationFrame(animate);
+                    } else {
+                        element.textContent = this.formatNumber(to);
+                    }
+                };
+                
+                requestAnimationFrame(animate);
             }
-            statsInitialized = true;
-            
-            const clientIP = await getClientIP();
-            
-            // Only track visitor once per session
-            if (!visitorTracked) {
-                await trackDailyUniqueVisitor(clientIP);
-                visitorTracked = true;
-            }
-            
-            await updateStatsDisplay();
-        }
 
-        async function trackDailyUniqueVisitor(ip) {
-            const today = new Date().toISOString().split('T')[0];
-            const lastVisitDate = localStorage.getItem(STATS_CONFIG.visitorDateKey);
-            const storedIp = localStorage.getItem(STATS_CONFIG.visitorIdKey);
-            
-            // Check if already tracked in this session (using sessionStorage)
-            const sessionTracked = sessionStorage.getItem('sri_api_visitor_tracked');
-            if (sessionTracked === 'true') {
-                console.log('[STATS] Visitor already tracked in this session');
-                return;
+            highlightUpdate(element) {
+                if (!element) return;
+                element.classList.add('updating');
+                setTimeout(() => element.classList.remove('updating'), 500);
             }
-            
-            const isNewDay = lastVisitDate !== today;
-            const isDifferentIP = storedIp !== ip;
-            
-            // Only track if new day OR different IP OR never tracked before
-            if (isNewDay || isDifferentIP || !lastVisitDate) {
+
+            formatNumber(num) {
+                if (num >= 1000000) {
+                    return (num / 1000000).toFixed(1) + 'M';
+                } else if (num >= 1000) {
+                    return (num / 1000).toFixed(1) + 'K';
+                }
+                return num.toString();
+            }
+
+            updateLiveIndicator(connected) {
+                const indicator = document.getElementById('liveIndicator');
+                const text = document.getElementById('liveText');
+                
+                if (indicator) {
+                    if (connected) {
+                        indicator.classList.remove('offline');
+                        if (text) text.textContent = 'Live';
+                    } else {
+                        indicator.classList.add('offline');
+                        if (text) text.textContent = 'Poll';
+                    }
+                }
+            }
+
+            async fetchStats() {
                 try {
-                    const response = await fetch(`${BACKEND_URL}/stats/increment`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ type: 'visitor', visitorId: ip })
-                    });
-                    
-                    const result = await response.json();
-                    
-                    if (result.success) {
-                        localStorage.setItem(STATS_CONFIG.visitorDateKey, today);
-                        localStorage.setItem(STATS_CONFIG.visitorIdKey, ip);
-                        sessionStorage.setItem('sri_api_visitor_tracked', 'true');
-                        console.log('[STATS] Visitor tracked successfully');
+                    const response = await fetch(`${BACKEND_URL}/stats`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.handleUpdate(data);
                     }
                 } catch (e) {
-                    console.log('[STATS] Failed to track visitor:', e.message);
+                    console.log('[LIVE] Polling failed:', e.message);
                 }
-            } else {
-                // Mark as tracked even if not sent to server (same day, same IP)
-                sessionStorage.setItem('sri_api_visitor_tracked', 'true');
-                console.log('[STATS] Visitor already counted today');
+            }
+
+            disconnect() {
+                if (this.eventSource) {
+                    this.eventSource.close();
+                    this.eventSource = null;
+                }
+                if (this.pollingInterval) {
+                    clearInterval(this.pollingInterval);
+                    this.pollingInterval = null;
+                }
+                this.isConnected = false;
             }
         }
 
-        async function updateStatsDisplay() {
-            try {
-                const response = await fetch(`${BACKEND_URL}/stats`);
-                if (response.ok) {
-                    const stats = await response.json();
-                    const apiCallsEl = document.getElementById('apiCallsCounter');
-                    const visitorsEl = document.getElementById('visitorsCounter');
-                    
-                    if (apiCallsEl) apiCallsEl.textContent = formatNumber(stats.apiCalls || 0);
-                    if (visitorsEl) visitorsEl.textContent = formatNumber(stats.totalVisitors || 0);
-                }
-            } catch (e) {
-                console.log('[STATS] Failed to load stats');
-            }
-        }
-
-        function formatNumber(num) {
-            if (num >= 1000000) {
-                return (num / 1000000).toFixed(1) + 'M';
-            } else if (num >= 1000) {
-                return (num / 1000).toFixed(1) + 'K';
-            }
-            return num.toString();
-        }
+        const liveStats = new LiveStatsManager();
 
         // ============================================
-        // HEALTH STATUS FROM BACKEND - FIXED
+        // VISITOR TRACKING - On Page Load Only
         // ============================================
 
-        async function loadHealthStatusFromBackend() {
-            try {
-                const response = await fetch(`${BACKEND_URL}/health/status`);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                const healthData = await response.json();
-                
-                // Update health check panel with proper time display
-                updateHealthCheckPanel(healthData);
-                
-                // Update endpoint statuses in apiData
-                if (healthData.endpoints) {
-                    Object.keys(apiData).forEach(categoryKey => {
-                        apiData[categoryKey].endpoints.forEach(endpoint => {
-                            // Find matching endpoint in health data
-                            let healthEndpoint = null;
-                            
-                            // Check by path first
-                            healthEndpoint = Object.values(healthData.endpoints).find(
-                                he => he.path === endpoint.path
-                            );
-                            
-                            // If not found by path, check by name
-                            if (!healthEndpoint) {
-                                healthEndpoint = Object.values(healthData.endpoints).find(
-                                    he => he.name === endpoint.name
-                                );
-                            }
-                            
-                            if (healthEndpoint && healthEndpoint.status) {
-                                endpoint.status = healthEndpoint.status;
-                            } else {
-                                endpoint.status = 'offline';
-                            }
-                        });
-                    });
-                }
-                
-                // Re-render sidebar with updated statuses
-                renderSidebar();
-                
-                console.log('[HEALTH] Loaded from backend:', healthData.summary);
-                
-            } catch (e) {
-                console.log('[HEALTH] Failed to load from backend:', e.message);
-                // If backend fails, show all as checking (not offline)
-                Object.keys(apiData).forEach(categoryKey => {
-                    apiData[categoryKey].endpoints.forEach(endpoint => {
-                        endpoint.status = 'checking';
-                    });
-                });
-                renderSidebar();
-            }
-        }
+        const VISITOR_CONFIG = {
+            visitorIdKey: 'sri_api_visitor_id',
+            sessionKey: 'sri_api_session_tracked'
+        };
 
-        function updateHealthCheckPanel(healthData) {
-            const statusEl = document.getElementById('healthCheckStatus');
-            const timeEl = document.getElementById('healthCheckTime');
-            const nextEl = document.getElementById('healthCheckNext');
-            
-            let statusClass = 'status-checking';
-            let message = 'Checking...';
-            
-            if (healthData && healthData.summary) {
-                const { online, total } = healthData.summary;
-                message = `${online}/${total} APIs Online`;
-                
-                if (online === total && total > 0) {
-                    statusClass = 'status-online';
-                } else if (online === 0 && total > 0) {
-                    statusClass = 'status-offline';
-                } else {
-                    statusClass = 'status-checking';
-                }
-            }
-            
-            statusEl.innerHTML = `<span class="status-indicator ${statusClass}"></span><span>${message}</span>`;
-            
-            // Handle last check time display
-            if (healthData && healthData.lastCheckTime && healthData.lastCheckTime !== '--') {
-                timeEl.textContent = `Last checked: ${healthData.lastCheckTime}`;
-            } else if (healthData && healthData.lastCheckDate) {
-                timeEl.textContent = `Last checked: ${healthData.lastCheckDate}`;
-            } else {
-                timeEl.textContent = 'Last checked: Never';
-            }
-            
-            // Handle next check time display
-            if (healthData && healthData.nextCheckTime && healthData.nextCheckTime !== '--') {
-                nextEl.textContent = `Next check: ${healthData.nextCheckTime}`;
-            } else {
-                nextEl.textContent = 'Next check: Today at 12:00 AM';
-            }
-        }
+        let visitorTracked = false;
 
-        // ============================================
-        // EXISTING FUNCTIONS
-        // ============================================
-
-        function setupHomeSearch() {
-            const homeSearchInput = document.getElementById('homeSearchInput');
-            const homeSearchClear = document.getElementById('homeSearchClear');
-            const hero = document.getElementById('homeSection');
-            const heroButtons = document.getElementById('heroButtons');
-            const searchResultsSection = document.getElementById('searchResultsSection');
-
-            homeSearchInput.addEventListener('input', (e) => {
-                const query = e.target.value.trim();
-                homeSearchClear.classList.toggle('visible', query.length > 0);
-                if (query.length > 0) {
-                    hero.classList.add('compact');
-                    heroButtons.style.display = 'none';
-                    searchResultsSection.classList.add('active');
-                    renderHomeSearchResults(query);
-                } else {
-                    hero.classList.remove('compact');
-                    heroButtons.style.display = 'flex';
-                    searchResultsSection.classList.remove('active');
-                }
-            });
-
-            homeSearchInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape') {
-                    clearHomeSearch();
-                    homeSearchInput.blur();
-                }
-            });
-        }
-
-        function renderHomeSearchResults(query) {
-            const grid = document.getElementById('searchResultsGrid');
-            const countEl = document.getElementById('searchResultsCount');
-            const lowerQuery = query.toLowerCase();
-            const results = [];
-            Object.entries(apiData).forEach(([catKey, category]) => {
-                category.endpoints.forEach((endpoint, index) => {
-                    const matchScore = calculateMatchScore(endpoint, category, lowerQuery);
-                    if (matchScore > 0) results.push({ category, categoryKey: catKey, endpoint, index, score: matchScore });
-                });
-            });
-            results.sort((a, b) => b.score - a.score);
-            countEl.textContent = `${results.length} endpoint${results.length !== 1 ? 's' : ''} found`;
-            if (results.length === 0) {
-                grid.innerHTML = `<div class="search-no-results" style="grid-column: 1 / -1;"><svg class="search-no-results-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path><line x1="8" y1="8" x2="14" y2="14"></line><line x1="14" y1="8" x2="8" y2="14"></line></svg><div class="search-no-results-title">No endpoints found</div><div class="search-no-results-text">Try searching for "youtube", "download", "instagram", or "free fire"</div><div class="search-suggestions"><div class="search-suggestions-title">Popular searches</div><div class="search-suggestion-tags"><span class="search-suggestion-tag" onclick="setHomeSearch('youtube')">youtube</span><span class="search-suggestion-tag" onclick="setHomeSearch('tiktok')">tiktok</span><span class="search-suggestion-tag" onclick="setHomeSearch('instagram')">instagram</span><span class="search-suggestion-tag" onclick="setHomeSearch('free fire')">free fire</span></div></div></div>`;
-            } else {
-                grid.innerHTML = results.map(result => `<div class="search-result-card" onclick="showEndpointDetail('${result.categoryKey}', ${result.index})"><div class="search-result-category"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>${result.category.title}</div><div class="search-result-name">${highlightMatch(result.endpoint.name, lowerQuery)}</div><div class="search-result-description">${result.endpoint.description}</div><div class="search-result-meta"><span class="search-result-method">${result.endpoint.method}</span><span class="search-result-path">${result.endpoint.path}</span></div></div>`).join('');
-            }
-        }
-
-        function calculateMatchScore(endpoint, category, query) {
-            let score = 0;
-            const nameLower = endpoint.name.toLowerCase();
-            const descLower = endpoint.description.toLowerCase();
-            const pathLower = endpoint.path.toLowerCase();
-            const catLower = category.title.toLowerCase();
-            if (nameLower === query) score += 100;
-            else if (nameLower.startsWith(query)) score += 80;
-            else if (nameLower.includes(query)) score += 60;
-            if (pathLower.includes(query)) score += 40;
-            if (descLower.includes(query)) score += 20;
-            if (catLower.includes(query)) score += 10;
-            return score;
-        }
-
-        function highlightMatch(text, query) {
-            if (!query) return text;
-            const regex = new RegExp(`(${escapeRegex(query)})`, 'gi');
-            return text.replace(regex, '<mark style="background: #fef3c7; color: #92400e; padding: 2px 4px; border-radius: 4px;">$1</mark>');
-        }
-
-        function escapeRegex(string) {
-            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        }
-
-        function setHomeSearch(value) {
-            const input = document.getElementById('homeSearchInput');
-            input.value = value;
-            input.dispatchEvent(new Event('input'));
-            input.focus();
-        }
-
-        function clearHomeSearch() {
-            document.getElementById('homeSearchInput').value = '';
-            document.getElementById('homeSection').classList.remove('compact');
-            document.getElementById('heroButtons').style.display = 'flex';
-            document.getElementById('searchResultsSection').classList.remove('active');
-            document.getElementById('homeSearchClear').classList.remove('visible');
-        }
-
-        function renderSidebar() {
-            const content = document.getElementById('sidebarContent');
-            content.innerHTML = '';
-            let totalResults = 0;
-            Object.keys(apiData).forEach(categoryKey => {
-                const category = apiData[categoryKey];
-                const filteredEndpoints = category.endpoints.filter(endpoint => {
-                    if (!sidebarSearchQuery) return true;
-                    const query = sidebarSearchQuery.toLowerCase();
-                    return endpoint.name.toLowerCase().includes(query) || endpoint.description.toLowerCase().includes(query) || endpoint.path.toLowerCase().includes(query) || category.title.toLowerCase().includes(query);
-                });
-                if (filteredEndpoints.length === 0) return;
-                totalResults += filteredEndpoints.length;
-                const section = document.createElement('div');
-                section.className = 'sidebar-section';
-                const title = document.createElement('div');
-                title.className = 'sidebar-section-title';
-                title.innerHTML = `<span>${category.title}</span><span class="sidebar-section-count">${filteredEndpoints.length}</span>`;
-                section.appendChild(title);
-                const menu = document.createElement('ul');
-                menu.className = 'sidebar-menu';
-                filteredEndpoints.forEach(endpoint => {
-                    const originalIndex = category.endpoints.indexOf(endpoint);
-                    const li = document.createElement('li');
-                    li.className = 'sidebar-item';
-                    const link = document.createElement('a');
-                    link.className = 'sidebar-link';
-                    if (sidebarSearchQuery && (endpoint.name.toLowerCase().includes(sidebarSearchQuery.toLowerCase()) || endpoint.path.toLowerCase().includes(sidebarSearchQuery.toLowerCase()))) link.classList.add('highlight');
-                    if (currentEndpoint && currentEndpoint.path === endpoint.path) link.classList.add('active');
-                    link.onclick = () => { showEndpointDetail(categoryKey, originalIndex); if (window.innerWidth < 1024) toggleSidebar(); };
-                    let statusClass = endpoint.status === 'online' ? 'status-online' : endpoint.status === 'offline' ? 'status-offline' : 'status-checking';
-                    link.innerHTML = `<span class="status-indicator ${statusClass}"></span><svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg><span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${endpoint.name}</span><span class="endpoint-badge">${endpoint.method}</span>`;
-                    li.appendChild(link);
-                    menu.appendChild(li);
-                });
-                section.appendChild(menu);
-                content.appendChild(section);
-            });
-            if (totalResults === 0 && sidebarSearchQuery) content.innerHTML = `<div class="no-results"><svg class="no-results-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path><line x1="8" y1="8" x2="14" y2="14"></line><line x1="14" y1="8" x2="8" y2="14"></line></svg><div>No endpoints found</div><div style="font-size: 12px; margin-top: 8px; opacity: 0.7;">Try a different search term</div></div>`;
-        }
-
-        const sidebarSearchInput = document.getElementById('sidebarSearchInput');
-        const sidebarSearchClear = document.getElementById('sidebarSearchClear');
-        sidebarSearchInput.addEventListener('input', (e) => {
-            sidebarSearchQuery = e.target.value.trim();
-            sidebarSearchClear.classList.toggle('visible', sidebarSearchQuery.length > 0);
-            renderSidebar();
-        });
-
-        function clearSidebarSearch() {
-            sidebarSearchQuery = '';
-            sidebarSearchInput.value = '';
-            sidebarSearchClear.classList.remove('visible');
-            renderSidebar();
-        }
-
-        function setupKeyboardShortcuts() {
-            document.addEventListener('keydown', (e) => {
-                if (e.key === '/' && !e.metaKey && !e.ctrlKey && e.target.tagName !== 'INPUT') {
-                    e.preventDefault();
-                    const sidebar = document.getElementById('sidebar');
-                    if (sidebar.classList.contains('active') || window.innerWidth >= 1024) sidebarSearchInput.focus();
-                    else document.getElementById('homeSearchInput').focus();
-                }
-                if (e.key === 'Escape') {
-                    if (document.getElementById('homeSearchInput').value) { clearHomeSearch(); return; }
-                    const sidebar = document.getElementById('sidebar');
-                    if (sidebar.classList.contains('active') && window.innerWidth < 1024) toggleSidebar();
-                }
-                if (e.key === 'm' && !e.metaKey && !e.ctrlKey && e.target.tagName !== 'INPUT') {
-                    e.preventDefault();
-                    toggleSidebar();
-                }
-            });
-        }
-
-        function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('active');
-            document.querySelector('.sidebar-overlay').classList.toggle('active');
-        }
-
-        function closeSidebar() {
-            document.getElementById('sidebar').classList.remove('active');
-            document.querySelector('.sidebar-overlay').classList.remove('active');
-        }
-
-        function showHome() {
-            hideAllSections();
-            document.getElementById('homeSection').style.display = 'flex';
-            document.getElementById('searchResultsSection').classList.remove('active');
-            currentCategory = null;
-            currentEndpoint = null;
-            isShowingAllApis = false;
-            document.getElementById('homeSection').classList.remove('compact');
-            document.getElementById('heroButtons').style.display = 'flex';
-            clearHomeSearch();
-            renderSidebar();
-            closeSidebar();
-            window.scrollTo(0, 0);
-        }
-
-        function showAllApis() {
-            isShowingAllApis = true;
-            currentCategory = null;
-            currentEndpoint = null;
-            hideAllSections();
-            document.getElementById('apiListSection').classList.add('active');
-            document.getElementById('listTitle').textContent = 'All APIs';
-            const list = document.getElementById('endpointsList');
-            list.innerHTML = '';
-            Object.keys(apiData).forEach(categoryKey => {
-                const catData = apiData[categoryKey];
-                const categoryHeader = document.createElement('div');
-                categoryHeader.className = 'category-header';
-                categoryHeader.innerHTML = `<span class="category-title">${catData.title}</span><span class="category-count">${catData.endpoints.length} endpoints</span>`;
-                list.appendChild(categoryHeader);
-                catData.endpoints.forEach((endpoint, index) => {
-                    const card = document.createElement('div');
-                    card.className = 'endpoint-card';
-                    card.onclick = () => showEndpointDetail(categoryKey, index);
-                    let statusClass = endpoint.status === 'online' ? 'status-online' : endpoint.status === 'offline' ? 'status-offline' : 'status-checking';
-                    card.innerHTML = `<div class="endpoint-header"><div style="flex: 1; min-width: 0;"><div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;"><span class="endpoint-method">${endpoint.method}</span><span class="status-indicator ${statusClass}"></span></div><h3 class="endpoint-name">${endpoint.name}</h3><p class="endpoint-description">${endpoint.description}</p></div><div class="endpoint-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div></div>`;
-                    list.appendChild(card);
-                });
-            });
-            renderSidebar();
-            window.scrollTo(0, 0);
-        }
-
-        function showApiList(category) {
-            isShowingAllApis = false;
-            currentCategory = category;
-            currentEndpoint = null;
-            hideAllSections();
-            document.getElementById('apiListSection').classList.add('active');
-            document.getElementById('listTitle').textContent = apiData[category].title;
-            const list = document.getElementById('endpointsList');
-            list.innerHTML = '';
-            apiData[category].endpoints.forEach((endpoint, index) => {
-                const card = document.createElement('div');
-                card.className = 'endpoint-card';
-                card.onclick = () => showEndpointDetail(category, index);
-                let statusClass = endpoint.status === 'online' ? 'status-online' : endpoint.status === 'offline' ? 'status-offline' : 'status-checking';
-                card.innerHTML = `<div class="endpoint-header"><div style="flex: 1; min-width: 0;"><div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;"><span class="endpoint-method">${endpoint.method}</span><span class="status-indicator ${statusClass}"></span></div><h3 class="endpoint-name">${endpoint.name}</h3><p class="endpoint-description">${endpoint.description}</p></div><div class="endpoint-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div></div>`;
-                list.appendChild(card);
-            });
-            renderSidebar();
-            window.scrollTo(0, 0);
-        }
-
-        function showEndpointDetail(category, index) {
-            currentCategory = category;
-            currentEndpoint = apiData[category].endpoints[index];
-            currentResponse = null;
-            isShowingAllApis = false;
-            hideAllSections();
-            document.getElementById('endpointDetail').classList.add('active');
-            document.getElementById('detailTitle').textContent = currentEndpoint.name;
-            document.getElementById('detailDescription').textContent = currentEndpoint.description;
-            updateEndpointUrl();
-            const paramsBody = document.getElementById('paramsTableBody');
-            paramsBody.innerHTML = '';
-            if (currentEndpoint.params && currentEndpoint.params.length > 0) {
-                document.getElementById('paramsSection').style.display = 'block';
-                currentEndpoint.params.forEach(param => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `<td><div class="param-name">${param.name}</div>${param.required ? '<span class="param-required">required</span>' : ''}</td><td><span class="param-type">${param.type}</span></td><td>${param.description}</td>`;
-                    paramsBody.appendChild(row);
-                });
-            } else document.getElementById('paramsSection').style.display = 'none';
-            renderTestInputs();
-            document.getElementById('responseSection').classList.remove('active');
-            updateCodeExamples();
-            renderSidebar();
-            window.scrollTo(0, 0);
-        }
-
-        function goBackFromDetail() {
-            isShowingAllApis ? showAllApis() : currentCategory ? showApiList(currentCategory) : showHome();
-        }
-
-        function updateEndpointUrl() {
-            document.getElementById('endpointUrl').textContent = `${BACKEND_URL}${currentEndpoint.path}`;
-        }
-
-        function buildRequestUrl() {
-            let url = `${BACKEND_URL}${currentEndpoint.path}`;
-            const params = currentEndpoint.params || [];
-            if (params.length > 0) {
-                const queryParams = [];
-                params.forEach(param => {
-                    const input = document.getElementById(`input-${param.name}`);
-                    const value = input ? input.value : '';
-                    if (value) queryParams.push(`${encodeURIComponent(param.name)}=${encodeURIComponent(value)}`);
-                });
-                if (queryParams.length > 0) url += '?' + queryParams.join('&');
-            }
-            return url;
-        }
-
-        function renderTestInputs() {
-            const container = document.getElementById('testInputs');
-            container.innerHTML = '';
-            const params = currentEndpoint.params || [];
-            if (params.length === 0) {
-                container.innerHTML = '<p style="color: var(--text-secondary); font-size: 14px;">No parameters required for this endpoint.</p>';
+        async function trackVisitorOnLoad() {
+            // Prevent double tracking
+            if (visitorTracked) {
+                console.log('[VISITOR] Already tracked');
                 return;
             }
-            params.forEach(param => {
-                const group = document.createElement('div');
-                group.className = 'input-group';
-                group.innerHTML = `<label class="input-label">${param.name}${param.required ? '<span style="color: #ff4444;">*</span>' : ''}</label><input type="text" id="input-${param.name}" class="test-input" placeholder="${param.placeholder || ''}" value="${param.placeholder || ''}" oninput="updateEndpointUrl(); updateCodeExamples();">`;
-                container.appendChild(group);
-            });
-        }
 
-        async function testEndpoint() {
-            const responseSection = document.getElementById('responseSection');
-            const responseStatus = document.getElementById('responseStatus');
-            const responseContent = document.getElementById('responseContent');
-            const responseTime = document.getElementById('responseTime');
-            const testBtnText = document.getElementById('testBtnText');
-            responseSection.classList.add('active');
-            responseStatus.className = 'response-status status-loading';
-            responseStatus.innerHTML = '<span class="loading"></span> Sending Request...';
-            responseContent.textContent = 'Waiting for response...';
-            responseTime.textContent = '';
-            testBtnText.textContent = 'Sending...';
-            const startTime = performance.now();
+            // Check if already tracked in this session
+            const sessionTracked = sessionStorage.getItem(VISITOR_CONFIG.sessionKey);
+            if (sessionTracked === 'true') {
+                console.log('[VISITOR] Session already tracked');
+                visitorTracked = true;
+                return;
+            }
+
             try {
-                const url = buildRequestUrl();
-                const response = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
-                const endTime = performance.now();
-                const duration = (endTime - startTime).toFixed(0);
-                const data = await response.json();
-                currentResponse = data;
-                if (response.ok && data.status !== false) {
-                    responseStatus.className = 'response-status status-success';
-                    responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Success (${response.status})`;
-                } else {
-                    responseStatus.className = 'response-status status-error';
-                    responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Error (${response.status})`;
+                // Generate or get persistent visitor ID
+                let visitorId = localStorage.getItem(VISITOR_CONFIG.visitorIdKey);
+                if (!visitorId) {
+                    visitorId = generateVisitorId();
+                    localStorage.setItem(VISITOR_CONFIG.visitorIdKey, visitorId);
                 }
-                responseTime.textContent = `${duration}ms`;
-                responseContent.innerHTML = syntaxHighlight(JSON.stringify(data, null, 2));
+
+                // Send to backend
+                const response = await fetch(`${BACKEND_URL}/stats/visitor`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        visitorId: visitorId,
+                        fingerprint: generateBrowserFingerprint(),
+                        timestamp: new Date().toISOString(),
+                        userAgent: navigator.userAgent
+                    })
+                });
+
+                const result = await response.json();
                 
-                console.log('[TEST] API call tracked by backend middleware');
-                
-            } catch (error) {
-                responseStatus.className = 'response-status status-error';
-                responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Network Error`;
-                responseContent.textContent = `Error: ${error.message}\n\nMake sure the API server is running and accessible.`;
-            } finally {
-                testBtnText.textContent = 'Send Request';
+                if (result.success) {
+                    sessionStorage.setItem(VISITOR_CONFIG.sessionKey, 'true');
+                    visitorTracked = true;
+                    console.log('[VISITOR] Tracked:', result.isNewVisitor ? 'NEW' : 'RETURNING');
+                    
+                    // Update display immediately with server data
+                    if (result.stats) {
+                        updateStatsDisplay(result.stats);
+                    }
+                }
+            } catch (e) {
+                console.log('[VISITOR] Failed:', e.message);
             }
         }
 
-        function syntaxHighlight(json) {
-            return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
-                let cls = 'json-number';
-                if (/^"/.test(match)) {
-                    if (/:$/.test(match)) { cls = 'json-key'; match = match.slice(0, -1) + '</span>:'; }
-                    else cls = 'json-string';
-                } else if (/true|false/.test(match)) cls = 'json-boolean';
-                else if (/null/.test(match)) cls = 'json-null';
-                return '<span class="' + cls + '">' + match + '</span>';
+        function generateVisitorId() {
+            const array = new Uint8Array(16);
+            crypto.getRandomValues(array);
+            return 'v_' + Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('').substring(0, 16);
+        }
+
+        function generateBrowserFingerprint() {
+    const components = [
+        navigator.userAgent,
+        navigator.language,
+        screen.colorDepth,
+        screen.width + 'x' + screen.height,
+        new Date().getTimezoneOffset(),
+        !!window.sessionStorage,
+        !!window.localStorage,
+        navigator.hardwareConcurrency || 'unknown',
+        navigator.deviceMemory || 'unknown',
+        navigator.platform
+    ];
+    
+    let hash = 0;
+    const str = components.join('|||');
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+    }
+    return 'fp_' + Math.abs(hash).toString(16);
+}
+
+function updateStatsDisplay(stats) {
+    const apiCallsEl = document.getElementById('apiCallsCounter');
+    const visitorsEl = document.getElementById('visitorsCounter');
+    
+    if (apiCallsEl) apiCallsEl.textContent = liveStats.formatNumber(stats.apiCalls || 0);
+    if (visitorsEl) visitorsEl.textContent = liveStats.formatNumber(stats.totalVisitors || 0);
+}
+
+// ============================================
+// HEALTH STATUS FROM BACKEND
+// ============================================
+
+async function loadHealthStatusFromBackend() {
+    try {
+        const response = await fetch(`${BACKEND_URL}/health/status`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const healthData = await response.json();
+        
+        // Update health check panel with proper time display
+        updateHealthCheckPanel(healthData);
+        
+        // Update endpoint statuses in apiData
+        if (healthData.endpoints) {
+            Object.keys(apiData).forEach(categoryKey => {
+                apiData[categoryKey].endpoints.forEach(endpoint => {
+                    // Find matching endpoint in health data
+                    let healthEndpoint = null;
+                    
+                    // Check by path first
+                    healthEndpoint = Object.values(healthData.endpoints).find(
+                        he => he.path === endpoint.path
+                    );
+                    
+                    // If not found by path, check by name
+                    if (!healthEndpoint) {
+                        healthEndpoint = Object.values(healthData.endpoints).find(
+                            he => he.name === endpoint.name
+                        );
+                    }
+                    
+                    if (healthEndpoint && healthEndpoint.status) {
+                        endpoint.status = healthEndpoint.status;
+                    } else {
+                        endpoint.status = 'offline';
+                    }
+                });
             });
         }
-
-        function copyResponse() {
-            if (!currentResponse) return;
-            navigator.clipboard.writeText(JSON.stringify(currentResponse, null, 2)).then(() => showToast('Response copied!'));
-        }
-
-        function downloadResponse() {
-            if (!currentResponse) return;
-            const json = JSON.stringify(currentResponse, null, 2);
-            const blob = new Blob([json], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `response-${currentEndpoint.path.replace(/\//g, '-')}-${Date.now()}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            showToast('Response downloaded!');
-        }
-
-        function openInBrowser() {
-            window.open(buildRequestUrl(), '_blank');
-        }
-
-        function updateCodeExamples() {
-            const url = buildRequestUrl();
-            const examples = {
-                curl: `curl -X GET "${url}" \\\n  -H "Accept: application/json"`,
-                node: `const axios = require('axios');\n\nconst url = '${url}';\n\naxios.get(url)\n  .then(response => {\n    console.log(response.data);\n  })\n  .catch(error => {\n    console.error(error);\n  });`,
-                python: `import requests\n\nurl = "${url}"\n\nresponse = requests.get(url)\ndata = response.json()\n\nprint(data)`,
-                php: `<?php\n\n$url = '${url}';\n\n$ch = curl_init($url);\ncurl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n$response = curl_exec($ch);\ncurl_close($ch);\n\n$data = json_decode($response, true);\nprint_r($data);`
-            };
-            const code = examples[currentTab] || examples.curl;
-            document.getElementById('codeContent').innerHTML = code.split('\n').map((line, i) => `<div class="code-line"><span class="line-number">${i + 1}</span><span>${escapeHtml(line)}</span></div>`).join('');
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        function switchTab(tab) {
-            currentTab = tab;
-            document.querySelectorAll('.code-tab').forEach(t => t.classList.remove('active'));
-            event.target.classList.add('active');
-            updateCodeExamples();
-        }
-
-        function hideAllSections() {
-            document.getElementById('homeSection').style.display = 'none';
-            document.getElementById('searchResultsSection').classList.remove('active');
-            document.getElementById('apiListSection').classList.remove('active');
-            document.getElementById('endpointDetail').classList.remove('active');
-        }
-
-        function copyToClipboard(elementId) {
-            navigator.clipboard.writeText(document.getElementById(elementId).textContent).then(() => showToast('Copied to clipboard!'));
-        }
-
-        function copyCode() {
-            const code = Array.from(document.querySelectorAll('#codeContent .code-line span:last-child')).map(line => line.textContent).join('\n');
-            navigator.clipboard.writeText(code).then(() => showToast('Code copied!'));
-        }
-
-        function showToast(message) {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.classList.add('show');
-            setTimeout(() => toast.classList.remove('show'), 3000);
-        }
-
-        // ============================================
-        // INITIALIZATION
-        // ============================================
         
-        document.addEventListener('DOMContentLoaded', () => {
-            renderSidebar();
-            setupKeyboardShortcuts();
-            setupHomeSearch();
-            initStats();
-            
-            // Load health status from backend (no local health check on load)
-            loadHealthStatusFromBackend();
+        // Re-render sidebar with updated statuses
+        renderSidebar();
+        
+        console.log('[HEALTH] Loaded from backend:', healthData.summary);
+        
+    } catch (e) {
+        console.log('[HEALTH] Failed to load from backend:', e.message);
+        // If backend fails, show all as checking (not offline)
+        Object.keys(apiData).forEach(categoryKey => {
+            apiData[categoryKey].endpoints.forEach(endpoint => {
+                endpoint.status = 'checking';
+            });
         });
-    </script>
+        renderSidebar();
+    }
+}
+
+function updateHealthCheckPanel(healthData) {
+    const statusEl = document.getElementById('healthCheckStatus');
+    const timeEl = document.getElementById('healthCheckTime');
+    const nextEl = document.getElementById('healthCheckNext');
+    
+    let statusClass = 'status-checking';
+    let message = 'Checking...';
+    
+    if (healthData && healthData.summary) {
+        const { online, total } = healthData.summary;
+        message = `${online}/${total} APIs Online`;
+        
+        if (online === total && total > 0) {
+            statusClass = 'status-online';
+        } else if (online === 0 && total > 0) {
+            statusClass = 'status-offline';
+        } else {
+            statusClass = 'status-checking';
+        }
+    }
+    
+    statusEl.innerHTML = `<span class="status-indicator ${statusClass}"></span><span>${message}</span>`;
+    
+    // Handle last check time display
+    if (healthData && healthData.lastCheckTime && healthData.lastCheckTime !== '--') {
+        timeEl.textContent = `Last checked: ${healthData.lastCheckTime}`;
+    } else if (healthData && healthData.lastCheckDate) {
+        timeEl.textContent = `Last checked: ${healthData.lastCheckDate}`;
+    } else {
+        timeEl.textContent = 'Last checked: Never';
+    }
+    
+    // Handle next check time display
+    if (healthData && healthData.nextCheckTime && healthData.nextCheckTime !== '--') {
+        nextEl.textContent = `Next check: ${healthData.nextCheckTime}`;
+    } else {
+        nextEl.textContent = 'Next check: Today at 12:00 AM';
+    }
+}
+
+// ============================================
+// EXISTING FUNCTIONS
+// ============================================
+
+function setupHomeSearch() {
+    const homeSearchInput = document.getElementById('homeSearchInput');
+    const homeSearchClear = document.getElementById('homeSearchClear');
+    const hero = document.getElementById('homeSection');
+    const heroButtons = document.getElementById('heroButtons');
+    const searchResultsSection = document.getElementById('searchResultsSection');
+
+    homeSearchInput.addEventListener('input', (e) => {
+        const query = e.target.value.trim();
+        homeSearchClear.classList.toggle('visible', query.length > 0);
+        if (query.length > 0) {
+            hero.classList.add('compact');
+            heroButtons.style.display = 'none';
+            searchResultsSection.classList.add('active');
+            renderHomeSearchResults(query);
+        } else {
+            hero.classList.remove('compact');
+            heroButtons.style.display = 'flex';
+            searchResultsSection.classList.remove('active');
+        }
+    });
+
+    homeSearchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            clearHomeSearch();
+            homeSearchInput.blur();
+        }
+    });
+}
+
+function renderHomeSearchResults(query) {
+    const grid = document.getElementById('searchResultsGrid');
+    const countEl = document.getElementById('searchResultsCount');
+    const lowerQuery = query.toLowerCase();
+    const results = [];
+    Object.entries(apiData).forEach(([catKey, category]) => {
+        category.endpoints.forEach((endpoint, index) => {
+            const matchScore = calculateMatchScore(endpoint, category, lowerQuery);
+            if (matchScore > 0) results.push({ category, categoryKey: catKey, endpoint, index, score: matchScore });
+        });
+    });
+    results.sort((a, b) => b.score - a.score);
+    countEl.textContent = `${results.length} endpoint${results.length !== 1 ? 's' : ''} found`;
+    if (results.length === 0) {
+        grid.innerHTML = `<div class="search-no-results" style="grid-column: 1 / -1;"><svg class="search-no-results-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path><line x1="8" y1="8" x2="14" y2="14"></line><line x1="14" y1="8" x2="8" y2="14"></line></svg><div class="search-no-results-title">No endpoints found</div><div class="search-no-results-text">Try searching for "youtube", "download", "instagram", or "free fire"</div><div class="search-suggestions"><div class="search-suggestions-title">Popular searches</div><div class="search-suggestion-tags"><span class="search-suggestion-tag" onclick="setHomeSearch('youtube')">youtube</span><span class="search-suggestion-tag" onclick="setHomeSearch('tiktok')">tiktok</span><span class="search-suggestion-tag" onclick="setHomeSearch('instagram')">instagram</span><span class="search-suggestion-tag" onclick="setHomeSearch('free fire')">free fire</span></div></div></div>`;
+    } else {
+        grid.innerHTML = results.map(result => `<div class="search-result-card" onclick="showEndpointDetail('${result.categoryKey}', ${result.index})"><div class="search-result-category"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>${result.category.title}</div><div class="search-result-name">${highlightMatch(result.endpoint.name, lowerQuery)}</div><div class="search-result-description">${result.endpoint.description}</div><div class="search-result-meta"><span class="search-result-method">${result.endpoint.method}</span><span class="search-result-path">${result.endpoint.path}</span></div></div>`).join('');
+    }
+}
+
+function calculateMatchScore(endpoint, category, query) {
+    let score = 0;
+    const nameLower = endpoint.name.toLowerCase();
+    const descLower = endpoint.description.toLowerCase();
+    const pathLower = endpoint.path.toLowerCase();
+    const catLower = category.title.toLowerCase();
+    if (nameLower === query) score += 100;
+    else if (nameLower.startsWith(query)) score += 80;
+    else if (nameLower.includes(query)) score += 60;
+    if (pathLower.includes(query)) score += 40;
+    if (descLower.includes(query)) score += 20;
+    if (catLower.includes(query)) score += 10;
+    return score;
+}
+
+function highlightMatch(text, query) {
+    if (!query) return text;
+    const regex = new RegExp(`(${escapeRegex(query)})`, 'gi');
+    return text.replace(regex, '<mark style="background: #fef3c7; color: #92400e; padding: 2px 4px; border-radius: 4px;">$1</mark>');
+}
+
+function escapeRegex(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function setHomeSearch(value) {
+    const input = document.getElementById('homeSearchInput');
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    input.focus();
+}
+
+function clearHomeSearch() {
+    document.getElementById('homeSearchInput').value = '';
+    document.getElementById('homeSection').classList.remove('compact');
+    document.getElementById('heroButtons').style.display = 'flex';
+    document.getElementById('searchResultsSection').classList.remove('active');
+    document.getElementById('homeSearchClear').classList.remove('visible');
+}
+
+function renderSidebar() {
+    const content = document.getElementById('sidebarContent');
+    content.innerHTML = '';
+    let totalResults = 0;
+    Object.keys(apiData).forEach(categoryKey => {
+        const category = apiData[categoryKey];
+        const filteredEndpoints = category.endpoints.filter(endpoint => {
+            if (!sidebarSearchQuery) return true;
+            const query = sidebarSearchQuery.toLowerCase();
+            return endpoint.name.toLowerCase().includes(query) || endpoint.description.toLowerCase().includes(query) || endpoint.path.toLowerCase().includes(query) || category.title.toLowerCase().includes(query);
+        });
+        if (filteredEndpoints.length === 0) return;
+        totalResults += filteredEndpoints.length;
+        const section = document.createElement('div');
+        section.className = 'sidebar-section';
+        const title = document.createElement('div');
+        title.className = 'sidebar-section-title';
+        title.innerHTML = `<span>${category.title}</span><span class="sidebar-section-count">${filteredEndpoints.length}</span>`;
+        section.appendChild(title);
+        const menu = document.createElement('ul');
+        menu.className = 'sidebar-menu';
+        filteredEndpoints.forEach(endpoint => {
+            const originalIndex = category.endpoints.indexOf(endpoint);
+            const li = document.createElement('li');
+            li.className = 'sidebar-item';
+            const link = document.createElement('a');
+            link.className = 'sidebar-link';
+            if (sidebarSearchQuery && (endpoint.name.toLowerCase().includes(sidebarSearchQuery.toLowerCase()) || endpoint.path.toLowerCase().includes(sidebarSearchQuery.toLowerCase()))) link.classList.add('highlight');
+            if (currentEndpoint && currentEndpoint.path === endpoint.path) link.classList.add('active');
+            link.onclick = () => { showEndpointDetail(categoryKey, originalIndex); if (window.innerWidth < 1024) toggleSidebar(); };
+            let statusClass = endpoint.status === 'online' ? 'status-online' : endpoint.status === 'offline' ? 'status-offline' : 'status-checking';
+            link.innerHTML = `<span class="status-indicator ${statusClass}"></span><svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg><span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${endpoint.name}</span><span class="endpoint-badge">${endpoint.method}</span>`;
+            li.appendChild(link);
+            menu.appendChild(li);
+        });
+        section.appendChild(menu);
+        content.appendChild(section);
+    });
+    if (totalResults === 0 && sidebarSearchQuery) content.innerHTML = `<div class="no-results"><svg class="no-results-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path><line x1="8" y1="8" x2="14" y2="14"></line><line x1="14" y1="8" x2="8" y2="14"></line></svg><div>No endpoints found</div><div style="font-size: 12px; margin-top: 8px; opacity: 0.7;">Try a different search term</div></div>`;
+}
+
+const sidebarSearchInput = document.getElementById('sidebarSearchInput');
+const sidebarSearchClear = document.getElementById('sidebarSearchClear');
+sidebarSearchInput.addEventListener('input', (e) => {
+    sidebarSearchQuery = e.target.value.trim();
+    sidebarSearchClear.classList.toggle('visible', sidebarSearchQuery.length > 0);
+    renderSidebar();
+});
+
+function clearSidebarSearch() {
+    sidebarSearchQuery = '';
+    sidebarSearchInput.value = '';
+    sidebarSearchClear.classList.remove('visible');
+    renderSidebar();
+}
+
+function setupKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+        if (e.key === '/' && !e.metaKey && !e.ctrlKey && e.target.tagName !== 'INPUT') {
+            e.preventDefault();
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar.classList.contains('active') || window.innerWidth >= 1024) sidebarSearchInput.focus();
+            else document.getElementById('homeSearchInput').focus();
+        }
+        if (e.key === 'Escape') {
+            if (document.getElementById('homeSearchInput').value) { clearHomeSearch(); return; }
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar.classList.contains('active') && window.innerWidth < 1024) toggleSidebar();
+        }
+        if (e.key === 'm' && !e.metaKey && !e.ctrlKey && e.target.tagName !== 'INPUT') {
+            e.preventDefault();
+            toggleSidebar();
+        }
+    });
+}
+
+function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('active');
+    document.querySelector('.sidebar-overlay').classList.toggle('active');
+}
+
+function closeSidebar() {
+    document.getElementById('sidebar').classList.remove('active');
+    document.querySelector('.sidebar-overlay').classList.remove('active');
+}
+
+function showHome() {
+    hideAllSections();
+    document.getElementById('homeSection').style.display = 'flex';
+    document.getElementById('searchResultsSection').classList.remove('active');
+    currentCategory = null;
+    currentEndpoint = null;
+    isShowingAllApis = false;
+    document.getElementById('homeSection').classList.remove('compact');
+    document.getElementById('heroButtons').style.display = 'flex';
+    clearHomeSearch();
+    renderSidebar();
+    closeSidebar();
+    window.scrollTo(0, 0);
+}
+
+function showAllApis() {
+    isShowingAllApis = true;
+    currentCategory = null;
+    currentEndpoint = null;
+    hideAllSections();
+    document.getElementById('apiListSection').classList.add('active');
+    document.getElementById('listTitle').textContent = 'All APIs';
+    const list = document.getElementById('endpointsList');
+    list.innerHTML = '';
+    Object.keys(apiData).forEach(categoryKey => {
+        const catData = apiData[categoryKey];
+        const categoryHeader = document.createElement('div');
+        categoryHeader.className = 'category-header';
+        categoryHeader.innerHTML = `<span class="category-title">${catData.title}</span><span class="category-count">${catData.endpoints.length} endpoints</span>`;
+        list.appendChild(categoryHeader);
+        catData.endpoints.forEach((endpoint, index) => {
+            const card = document.createElement('div');
+            card.className = 'endpoint-card';
+            card.onclick = () => showEndpointDetail(categoryKey, index);
+            let statusClass = endpoint.status === 'online' ? 'status-online' : endpoint.status === 'offline' ? 'status-offline' : 'status-checking';
+            card.innerHTML = `<div class="endpoint-header"><div style="flex: 1; min-width: 0;"><div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;"><span class="endpoint-method">${endpoint.method}</span><span class="status-indicator ${statusClass}"></span></div><h3 class="endpoint-name">${endpoint.name}</h3><p class="endpoint-description">${endpoint.description}</p></div><div class="endpoint-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div></div>`;
+            list.appendChild(card);
+        });
+    });
+    renderSidebar();
+    window.scrollTo(0, 0);
+}
+
+function showApiList(category) {
+    isShowingAllApis = false;
+    currentCategory = category;
+    currentEndpoint = null;
+    hideAllSections();
+    document.getElementById('apiListSection').classList.add('active');
+    document.getElementById('listTitle').textContent = apiData[category].title;
+    const list = document.getElementById('endpointsList');
+    list.innerHTML = '';
+    apiData[category].endpoints.forEach((endpoint, index) => {
+        const card = document.createElement('div');
+        card.className = 'endpoint-card';
+        card.onclick = () => showEndpointDetail(category, index);
+        let statusClass = endpoint.status === 'online' ? 'status-online' : endpoint.status === 'offline' ? 'status-offline' : 'status-checking';
+        card.innerHTML = `<div class="endpoint-header"><div style="flex: 1; min-width: 0;"><div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;"><span class="endpoint-method">${endpoint.method}</span><span class="status-indicator ${statusClass}"></span></div><h3 class="endpoint-name">${endpoint.name}</h3><p class="endpoint-description">${endpoint.description}</p></div><div class="endpoint-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div></div>`;
+        list.appendChild(card);
+    });
+    renderSidebar();
+    window.scrollTo(0, 0);
+}
+
+function showEndpointDetail(category, index) {
+    currentCategory = category;
+    currentEndpoint = apiData[category].endpoints[index];
+    currentResponse = null;
+    isShowingAllApis = false;
+    hideAllSections();
+    document.getElementById('endpointDetail').classList.add('active');
+    document.getElementById('detailTitle').textContent = currentEndpoint.name;
+    document.getElementById('detailDescription').textContent = currentEndpoint.description;
+    updateEndpointUrl();
+    const paramsBody = document.getElementById('paramsTableBody');
+    paramsBody.innerHTML = '';
+    if (currentEndpoint.params && currentEndpoint.params.length > 0) {
+        document.getElementById('paramsSection').style.display = 'block';
+        currentEndpoint.params.forEach(param => {
+            const row = document.createElement('tr');
+            row.innerHTML = `<td><div class="param-name">${param.name}</div>${param.required ? '<span class="param-required">required</span>' : ''}</td><td><span class="param-type">${param.type}</span></td><td>${param.description}</td>`;
+            paramsBody.appendChild(row);
+        });
+    } else document.getElementById('paramsSection').style.display = 'none';
+    renderTestInputs();
+    document.getElementById('responseSection').classList.remove('active');
+    updateCodeExamples();
+    renderSidebar();
+    window.scrollTo(0, 0);
+}
+
+function goBackFromDetail() {
+    isShowingAllApis ? showAllApis() : currentCategory ? showApiList(currentCategory) : showHome();
+}
+
+function updateEndpointUrl() {
+    document.getElementById('endpointUrl').textContent = `${BACKEND_URL}${currentEndpoint.path}`;
+}
+
+function buildRequestUrl() {
+    let url = `${BACKEND_URL}${currentEndpoint.path}`;
+    const params = currentEndpoint.params || [];
+    if (params.length > 0) {
+        const queryParams = [];
+        params.forEach(param => {
+            const input = document.getElementById(`input-${param.name}`);
+            const value = input ? input.value : '';
+            if (value) queryParams.push(`${encodeURIComponent(param.name)}=${encodeURIComponent(value)}`);
+        });
+        if (queryParams.length > 0) url += '?' + queryParams.join('&');
+    }
+    return url;
+}
+
+function renderTestInputs() {
+    const container = document.getElementById('testInputs');
+    container.innerHTML = '';
+    const params = currentEndpoint.params || [];
+    if (params.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-secondary); font-size: 14px;">No parameters required for this endpoint.</p>';
+        return;
+    }
+    params.forEach(param => {
+        const group = document.createElement('div');
+        group.className = 'input-group';
+        group.innerHTML = `<label class="input-label">${param.name}${param.required ? '<span style="color: #ff4444;">*</span>' : ''}</label><input type="text" id="input-${param.name}" class="test-input" placeholder="${param.placeholder || ''}" value="${param.placeholder || ''}" oninput="updateEndpointUrl(); updateCodeExamples();">`;
+        container.appendChild(group);
+    });
+}
+
+async function testEndpoint() {
+    const responseSection = document.getElementById('responseSection');
+    const responseStatus = document.getElementById('responseStatus');
+    const responseContent = document.getElementById('responseContent');
+    const responseTime = document.getElementById('responseTime');
+    const testBtnText = document.getElementById('testBtnText');
+    responseSection.classList.add('active');
+    responseStatus.className = 'response-status status-loading';
+    responseStatus.innerHTML = '<span class="loading"></span> Sending Request...';
+    responseContent.textContent = 'Waiting for response...';
+    responseTime.textContent = '';
+    testBtnText.textContent = 'Sending...';
+    const startTime = performance.now();
+    try {
+        const url = buildRequestUrl();
+        const response = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
+        const endTime = performance.now();
+        const duration = (endTime - startTime).toFixed(0);
+        const data = await response.json();
+        currentResponse = data;
+        if (response.ok && data.status !== false) {
+            responseStatus.className = 'response-status status-success';
+            responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Success (${response.status})`;
+        } else {
+            responseStatus.className = 'response-status status-error';
+            responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Error (${response.status})`;
+        }
+        responseTime.textContent = `${duration}ms`;
+        responseContent.innerHTML = syntaxHighlight(JSON.stringify(data, null, 2));
+        
+        console.log('[TEST] API call tracked by backend middleware');
+        
+    } catch (error) {
+        responseStatus.className = 'response-status status-error';
+        responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Network Error`;
+        responseContent.textContent = `Error: ${error.message}\n\nMake sure the API server is running and accessible.`;
+    } finally {
+        testBtnText.textContent = 'Send Request';
+    }
+}
+
+function syntaxHighlight(json) {
+    return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+        let cls = 'json-number';
+        if (/^"/.test(match)) {
+            if (/:$/.test(match)) { cls = 'json-key'; match = match.slice(0, -1) + '</span>:'; }
+            else cls = 'json-string';
+        } else if (/true|false/.test(match)) cls = 'json-boolean';
+        else if (/null/.test(match)) cls = 'json-null';
+        return '<span class="' + cls + '">' + match + '</span>';
+    });
+}
+
+function copyResponse() {
+    if (!currentResponse) return;
+    navigator.clipboard.writeText(JSON.stringify(currentResponse, null, 2)).then(() => showToast('Response copied!'));
+}
+
+function downloadResponse() {
+    if (!currentResponse) return;
+    const json = JSON.stringify(currentResponse, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `response-${currentEndpoint.path.replace(/\//g, '-')}-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('Response downloaded!');
+}
+
+function openInBrowser() {
+    window.open(buildRequestUrl(), '_blank');
+}
+
+function updateCodeExamples() {
+    const url = buildRequestUrl();
+    const examples = {
+        curl: `curl -X GET "${url}" \\\n  -H "Accept: application/json"`,
+        node: `const axios = require('axios');\n\nconst url = '${url}';\n\naxios.get(url)\n  .then(response => {\n    console.log(response.data);\n  })\n  .catch(error => {\n    console.error(error);\n  });`,
+        python: `import requests\n\nurl = "${url}"\n\nresponse = requests.get(url)\ndata = response.json()\n\nprint(data)`,
+        php: `<?php\n\n$url = '${url}';\n\n$ch = curl_init($url);\ncurl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n$response = curl_exec($ch);\ncurl_close($ch);\n\n$data = json_decode($response, true);\nprint_r($data);`
+    };
+    const code = examples[currentTab] || examples.curl;
+    document.getElementById('codeContent').innerHTML = code.split('\n').map((line, i) => `<div class="code-line"><span class="line-number">${i + 1}</span><span>${escapeHtml(line)}</span></div>`).join('');
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function switchTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.code-tab').forEach(t => t.classList.remove('active'));
+    event.target.classList.add('active');
+    updateCodeExamples();
+}
+
+function hideAllSections() {
+    document.getElementById('homeSection').style.display = 'none';
+    document.getElementById('searchResultsSection').classList.remove('active');
+    document.getElementById('apiListSection').classList.remove('active');
+    document.getElementById('endpointDetail').classList.remove('active');
+}
+
+function copyToClipboard(elementId) {
+    navigator.clipboard.writeText(document.getElementById(elementId).textContent).then(() => showToast('Copied to clipboard!'));
+}
+
+function copyCode() {
+    const code = Array.from(document.querySelectorAll('#codeContent .code-line span:last-child')).map(line => line.textContent).join('\n');
+    navigator.clipboard.writeText(code).then(() => showToast('Code copied!'));
+}
+
+function showToast(message) {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+// ============================================
+// INITIALIZATION
+// ============================================
+
+document.addEventListener('DOMContentLoaded', () => {
+    renderSidebar();
+    setupKeyboardShortcuts();
+    setupHomeSearch();
+    
+    // 1. Track visitor on page load (NOT on API test)
+    trackVisitorOnLoad();
+    
+    // 2. Start live stats updates
+    liveStats.connect();
+    
+    // 3. Load health status
+    loadHealthStatusFromBackend();
+    
+    // 4. Handle page visibility change (reconnect when visible)
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && !liveStats.isConnected) {
+            liveStats.connect();
+        }
+    });
+});
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+    liveStats.disconnect();
+});
+</script>
 </body>
 </html>
