@@ -734,28 +734,20 @@
         const liveStats = new LiveStatsManager();
 
         // ============================================
-        // VISITOR TRACKING - ONLY ON API TEST (Not on page load)
+        // VISITOR TRACKING - ON PAGE LOAD (Not on API test)
         // ============================================
 
         const VISITOR_CONFIG = {
             visitorIdKey: 'sri_api_visitor_id',
-            testSessionKey: 'sri_api_tested_this_session'
+            lastVisitKey: 'sri_api_last_visit'
         };
 
         let visitorTracked = false;
 
-        async function trackVisitorOnApiTest() {
-            // Prevent double tracking in same session
+        async function trackVisitorOnPageLoad() {
+            // Prevent double tracking
             if (visitorTracked) {
                 console.log('[VISITOR] Already tracked this session');
-                return;
-            }
-
-            // Check if already tested in this session
-            const sessionTested = sessionStorage.getItem(VISITOR_CONFIG.testSessionKey);
-            if (sessionTested === 'true') {
-                console.log('[VISITOR] Session already tested');
-                visitorTracked = true;
                 return;
             }
 
@@ -767,31 +759,43 @@
                     localStorage.setItem(VISITOR_CONFIG.visitorIdKey, visitorId);
                 }
 
-                // Send to backend - ONLY when testing API
-                const response = await fetch(`${BACKEND_URL}/stats/visitor`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        visitorId: visitorId,
-                        fingerprint: generateBrowserFingerprint(),
-                        timestamp: new Date().toISOString(),
-                        userAgent: navigator.userAgent,
-                        source: 'api_test' // Mark as coming from API test
-                    })
-                });
-
-                const result = await response.json();
+                // Check if we should count this visit (cooldown: 1 hour)
+                const lastVisit = localStorage.getItem(VISITOR_CONFIG.lastVisitKey);
+                const now = Date.now();
+                const oneHour = 60 * 60 * 1000;
                 
-                if (result.success) {
-                    sessionStorage.setItem(VISITOR_CONFIG.testSessionKey, 'true');
-                    visitorTracked = true;
-                    console.log('[VISITOR] Tracked on API test:', result.isNewVisitor ? 'NEW' : 'RETURNING');
+                // Only count if last visit was more than 1 hour ago
+                if (!lastVisit || (now - parseInt(lastVisit)) > oneHour) {
+                    // Send to backend - ON PAGE LOAD
+                    const response = await fetch(`${BACKEND_URL}/stats/visitor`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            visitorId: visitorId,
+                            fingerprint: generateBrowserFingerprint(),
+                            timestamp: new Date().toISOString(),
+                            userAgent: navigator.userAgent,
+                            source: 'page_load' // Mark as coming from page load
+                        })
+                    });
+
+                    const result = await response.json();
                     
-                    // Update display immediately with server data
-                    if (result.stats) {
-                        updateStatsDisplay(result.stats);
+                    if (result.success) {
+                        localStorage.setItem(VISITOR_CONFIG.lastVisitKey, now.toString());
+                        visitorTracked = true;
+                        console.log('[VISITOR] Tracked on page load:', result.isNewVisitor ? 'NEW' : 'RETURNING');
+                        
+                        // Update display immediately with server data
+                        if (result.stats) {
+                            updateStatsDisplay(result.stats);
+                        }
                     }
+                } else {
+                    console.log('[VISITOR] Skipped (within 1 hour cooldown)');
+                    visitorTracked = true;
                 }
+                
             } catch (e) {
                 console.log('[VISITOR] Failed:', e.message);
             }
@@ -1259,8 +1263,7 @@
             responseTime.textContent = '';
             testBtnText.textContent = 'Sending...';
             
-            // Track visitor ONLY when testing API (not on page load)
-            trackVisitorOnApiTest();
+            // NO visitor tracking here - only on page load
             
             const startTime = performance.now();
             try {
@@ -1279,8 +1282,6 @@
                 }
                 responseTime.textContent = `${duration}ms`;
                 responseContent.innerHTML = syntaxHighlight(JSON.stringify(data, null, 2));
-                
-                console.log('[TEST] API call tracked by backend middleware');
                 
             } catch (error) {
                 responseStatus.className = 'response-status status-error';
@@ -1384,13 +1385,16 @@
             setupKeyboardShortcuts();
             setupHomeSearch();
             
-            // 1. Start live stats updates (NO visitor tracking on page load)
+            // 1. Track visitor on PAGE LOAD (not on API test)
+            trackVisitorOnPageLoad();
+            
+            // 2. Start live stats updates
             liveStats.connect();
             
-            // 2. Load health status
+            // 3. Load health status
             loadHealthStatusFromBackend();
             
-            // 3. Handle page visibility change (reconnect when visible)
+            // 4. Handle page visibility change (reconnect when visible)
             document.addEventListener('visibilitychange', () => {
                 if (!document.hidden && !liveStats.isConnected) {
                     liveStats.connect();
