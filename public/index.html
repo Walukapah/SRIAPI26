@@ -497,25 +497,33 @@
         // Status is loaded from backend /health/status
         // ============================================
         const apiData = {
-            download: {
-                title: "Download",
-                icon: "download",
-                endpoints: [
-                    { name: "YouTube Downloader", path: "/download/youtubedl", method: "GET", description: "Download YouTube videos in multiple formats and qualities using ytsave.to API integration.", params: [{ name: "url", type: "string", required: true, description: "YouTube video URL (youtube.com or youtu.be)", placeholder: "https://youtube.com/watch?v=dQw4w9WgXcQ" }] },
-                    { name: "YouTube Downloader V2", path: "/download/youtubedl2", method: "GET", description: "Alternative YouTube downloader using ytdown.to API with enhanced format support.", params: [{ name: "url", type: "string", required: true, description: "YouTube video URL", placeholder: "https://youtube.com/watch?v=dQw4w9WgXcQ" }] },
-                    { name: "TikTok Downloader", path: "/download/tiktokdl", method: "GET", description: "Download TikTok videos without watermark, with metadata and music extraction support.", params: [{ name: "url", type: "string", required: true, description: "TikTok video URL (tiktok.com or vm.tiktok.com)", placeholder: "https://vt.tiktok.com/ZSuYLQkMm/" }] },
-                    { name: "Instagram Downloader", path: "/download/instagramdl", method: "GET", description: "Download Instagram videos, reels, and images with thumbnail extraction.", params: [{ name: "url", type: "string", required: true, description: "Instagram post/reel URL", placeholder: "https://www.instagram.com/reel/DKR-FW1yo_p/?igsh=eG05NTh3MnUxcnE3" }] },
-                    { name: "Text to Photo", path: "/download/textphoto", method: "GET", description: "Generate stylized text images using ephoto360, photooxy, and textpro templates.", params: [{ name: "url", type: "string", required: true, description: "Template URL from ephoto360.com, photooxy.com, or textpro.me", placeholder: "https://textpro.me/create-naruto-logo-style-text-effect-online-1125.html" }, { name: "text", type: "string", required: true, description: "First text parameter", placeholder: "SRI API W" }] }
-                ]
-            },
-            search: {
-                title: "Search",
-                icon: "search",
-                endpoints: [
-                    { name: "Free Fire Player Info", path: "/search/freefire", method: "GET", description: "Retrieve detailed player statistics, clan info, and profile data from Free Fire game.", params: [{ name: "region", type: "string", required: true, description: "Game server region (e.g., SG, ID, BR, US)", placeholder: "SG" }, { name: "uid", type: "string", required: true, description: "Player unique ID number", placeholder: "2326343985" }] }
-                ]
-            }
-        };
+    download: {
+        title: "Download",
+        icon: "download",
+        endpoints: [
+            { name: "YouTube Downloader", path: "/download/youtubedl", method: "GET", description: "Download YouTube videos in multiple formats and qualities using ytsave.to API integration.", params: [{ name: "url", type: "string", required: true, description: "YouTube video URL (youtube.com or youtu.be)", placeholder: "https://youtube.com/watch?v=dQw4w9WgXcQ" }] },
+            { name: "YouTube Downloader V2", path: "/download/youtubedl2", method: "GET", description: "Alternative YouTube downloader using ytdown.to API with enhanced format support.", params: [{ name: "url", type: "string", required: true, description: "YouTube video URL", placeholder: "https://youtube.com/watch?v=dQw4w9WgXcQ" }] },
+            { name: "TikTok Downloader", path: "/download/tiktokdl", method: "GET", description: "Download TikTok videos without watermark, with metadata and music extraction support.", params: [{ name: "url", type: "string", required: true, description: "TikTok video URL (tiktok.com or vm.tiktok.com)", placeholder: "https://vt.tiktok.com/ZSuYLQkMm/" }] },
+            { name: "Instagram Downloader", path: "/download/instagramdl", method: "GET", description: "Download Instagram videos, reels, and images with thumbnail extraction.", params: [{ name: "url", type: "string", required: true, description: "Instagram post/reel URL", placeholder: "https://www.instagram.com/reel/DKR-FW1yo_p/" }] },
+            { name: "Text to Photo", path: "/download/textphoto", method: "GET", description: "Generate stylized text images using ephoto360, photooxy, and textpro templates.", params: [{ name: "url", type: "string", required: true, description: "Template URL from ephoto360.com, photooxy.com, or textpro.me", placeholder: "https://textpro.me/create-naruto-logo-style-text-effect-online-1125.html" }, { name: "text", type: "string", required: true, description: "First text parameter", placeholder: "SRI API W" }] }
+        ]
+    },
+    search: {
+        title: "Search",
+        icon: "search",
+        endpoints: [
+            { name: "Free Fire Player Info", path: "/search/freefire", method: "GET", description: "Retrieve detailed player statistics, clan info, and profile data from Free Fire game.", params: [{ name: "region", type: "string", required: true, description: "Game server region (e.g., SG, ID, BR, US)", placeholder: "SG" }, { name: "uid", type: "string", required: true, description: "Player unique ID number", placeholder: "2326343985" }] }
+        ]
+    },
+    ai: {
+        title: "AI",
+        icon: "cpu",
+        endpoints: [
+            { name: "ChatGPT AI Chat", path: "/ai/chatgpt", method: "GET", description: "Advanced AI chat powered by GPT-4.1-nano. Supports conversation history with session management for continuous conversations.", params: [{ name: "prompt", type: "string", required: true, description: "Your message or question to the AI", placeholder: "Hello, how are you?" }, { name: "sessionId", type: "string", required: false, description: "Optional session ID for conversation continuity (use same ID to continue conversation)", placeholder: "user123" }] }
+        ]
+    }
+};
+
 
         let currentCategory = null, currentEndpoint = null, currentResponse = null, currentTab = 'curl', sidebarSearchQuery = '', isShowingAllApis = false;
 
