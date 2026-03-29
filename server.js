@@ -16,6 +16,7 @@ const instagramdl = require('./api/instagramdl');
 const freefireinfo = require('./api/freefireinfo');
 const maker = require('./api/textphoto');
 const youtubedl2 = require('./api/youtubedl2');
+const chatgptai = require('./api/chatgptai');
 
 const app = express();
 
