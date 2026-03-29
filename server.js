@@ -108,7 +108,8 @@ const ENDPOINT_NAME_MAP = {
     'tiktokdl': 'TikTok Downloader',
     'instagramdl': 'Instagram Downloader',
     'textphoto': 'Text to Photo',
-    'freefire': 'Free Fire Player Info'
+    'freefire': 'Free Fire Player Info',
+    'chatgpt': 'ChatGPT AI Chat'
 };
 
 function getEndpointName(path) {
@@ -278,7 +279,8 @@ const ENDPOINTS_TO_CHECK = [
     { name: 'TikTok Downloader', path: '/download/tiktokdl', method: 'GET', testParams: { url: 'https://vt.tiktok.com/ZSuYLQkMm/' } },
     { name: 'Instagram Downloader', path: '/download/instagramdl', method: 'GET', testParams: { url: 'https://www.instagram.com/reel/DKR-FW1yo_p/' } },
     { name: 'Text to Photo', path: '/download/textphoto', method: 'GET', testParams: { url: 'https://textpro.me/create-naruto-logo-style-text-effect-online-1125.html', text: 'Test' } },
-    { name: 'Free Fire Player Info', path: '/search/freefire', method: 'GET', testParams: { region: 'SG', uid: '2326343985' } }
+    { name: 'Free Fire Player Info', path: '/search/freefire', method: 'GET', testParams: { region: 'SG', uid: '2326343985' } },
+    { name: 'ChatGPT AI', path: '/ai/chatgpt', method: 'GET', testParams: { prompt: 'Hello' } }
 ];
 
 // ============================================
@@ -891,15 +893,16 @@ const limiter = rateLimit({
 });
 app.use('/download', limiter);
 app.use('/search', limiter);
+app.use('/ai', limiter);
 
 // ============================================
 // API CALL TRACKING MIDDLEWARE
 // ============================================
 
-app.use(['/download', '/search'], async (req, res, next) => {
+app.use(['/download', '/search', '/ai'], async (req, res, next) => {
     const path = req.path;
     const validEndpoints = ['/youtubedl', '/youtubedl2', '/tiktokdl', 
-        '/instagramdl', '/textphoto', '/freefire'];
+        '/instagramdl', '/textphoto', '/freefire', '/chatgpt'];
     const isValidEndpoint = validEndpoints.some(endpoint => path.includes(endpoint));
 
     if (isValidEndpoint) {
@@ -1228,6 +1231,64 @@ app.get('/download/textphoto', async (req, res) => {
   }
 });
 
+// ChatGPT AI Chat
+app.get('/ai/chatgpt', async (req, res) => {
+  try {
+    const { prompt, sessionId } = req.query;
+    
+    if (!prompt) {
+      return res.status(400).json({ 
+        status: false, 
+        message: "Please provide a prompt parameter" 
+      });
+    }
+    
+    const result = await chatgptai(prompt, sessionId);
+    
+    if (result.success) {
+      res.json({ 
+        status: true, 
+        creator: "WALUKA🇱🇰", 
+        result: {
+          query: prompt,
+          response: result.response,
+          model: result.model,
+          sessionId: result.sessionId
+        }
+      });
+    } else {
+      res.status(500).json({ 
+        status: false, 
+        message: result.error 
+      });
+    }
+  } catch (error) {
+    console.error('API Error:', error);
+    res.status(500).json({ 
+      status: false, 
+      message: error.message 
+    });
+  }
+});
+
+// Clear chat history
+app.get('/ai/chatgpt/clear', (req, res) => {
+  try {
+    const { sessionId } = req.query;
+    const result = chatgptai.clearHistory(sessionId);
+    res.json({ 
+      status: true, 
+      creator: "WALUKA🇱🇰", 
+      result: result 
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      status: false, 
+      message: error.message 
+    });
+  }
+});
+
 // ============================================
 // STATIC FILES
 // ============================================
@@ -1252,7 +1313,9 @@ app.use((req, res) => {
       "/download/tiktokdl",
       "/download/instagramdl",
       "/download/textphoto",
-      "/search/freefire"
+      "/search/freefire",
+      "/ai/chatgpt",
+      "/ai/chatgpt/clear"
     ]
   });
 });
@@ -1326,6 +1389,8 @@ async function startServer() {
 ║  • /download/instagramdl                 ║
 ║  • /download/textphoto                   ║
 ║  • /search/freefire                      ║
+║  • /ai/chatgpt                           ║
+║  • /ai/chatgpt/clear                     ║
 ║                                          ║
 ║  Health: /health                         ║
 ║  Stats:   /stats                         ║
