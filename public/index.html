@@ -785,7 +785,7 @@
                 const oneHour = 60 * 60 * 1000;
                 
                 if (!lastVisit || (now - parseInt(lastVisit)) > oneHour) {
-                    const response = await fetch(`${BACKEND_URL}/stats/visitor`, {
+                                    const response = await fetch(`${BACKEND_URL}/stats/visitor`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ 
@@ -1424,12 +1424,30 @@
 
         function updateCodeExamples() {
             const url = buildRequestUrl();
-            const examples = {
-                curl: `curl -X GET "${url}" \\\n  -H "Accept: application/json"`,
-                node: `const axios = require('axios');\n\nconst url = '${url}';\n\naxios.get(url)\n  .then(response => {\n    console.log(response.data);\n  })\n  .catch(error => {\n    console.error(error);\n  });`,
-                python: `import requests\n\nurl = "${url}"\n\nresponse = requests.get(url)\ndata = response.json()\n\nprint(data)`,
-                php: `<?php\n\n$url = '${url}';\n\n$ch = curl_init($url);\ncurl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n$response = curl_exec($ch);\ncurl_close($ch);\n\n$data = json_decode($response, true);\nprint_r($data);`
-            };
+            
+            // Check if this is an image endpoint (AI Art)
+            const isImageEndpoint = currentEndpoint.responseType === 'image' || currentEndpoint.path.includes('artai');
+            
+            let examples;
+            
+            if (isImageEndpoint) {
+                // Image-specific code examples for AI Art Generator
+                examples = {
+                    curl: `curl -X GET "${url}" \\\n  -H "Accept: image/jpeg,image/png" \\\n  --output ai-art.jpg`,
+                    node: `const fs = require('fs');\nconst https = require('https');\n\nconst url = '${url}';\n\nhttps.get(url, (response) => {\n  if (response.headers['content-type'].includes('image')) {\n    const fileStream = fs.createWriteStream('ai-art.jpg');\n    response.pipe(fileStream);\n    fileStream.on('finish', () => {\n      console.log('Image saved as ai-art.jpg');\n    });\n  } else {\n    let data = '';\n    response.on('data', chunk => data += chunk);\n    response.on('end', () => console.log(JSON.parse(data)));\n  }\n}).on('error', (err) => console.error('Error:', err));`,
+                    python: `import requests\n\nurl = "${url}"\n\nresponse = requests.get(url)\n\n# Check if response is an image\nif 'image' in response.headers.get('Content-Type', ''):\n    with open('ai-art.jpg', 'wb') as f:\n        f.write(response.content)\n    print("Image saved as ai-art.jpg")\nelse:\n    data = response.json()\n    print(data)`,
+                    php: `<?php\n\n$url = '${url}';\n\n$ch = curl_init($url);\ncurl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n$response = curl_exec($ch);\n$contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);\ncurl_close($ch);\n\nif (strpos($contentType, 'image') !== false) {\n    file_put_contents('ai-art.jpg', $response);\n    echo "Image saved as ai-art.jpg";\n} else {\n    $data = json_decode($response, true);\n    print_r($data);\n}`
+                };
+            } else {
+                // Regular JSON code examples
+                examples = {
+                    curl: `curl -X GET "${url}" \\\n  -H "Accept: application/json"`,
+                    node: `const axios = require('axios');\n\nconst url = '${url}';\n\naxios.get(url)\n  .then(response => {\n    console.log(response.data);\n  })\n  .catch(error => {\n    console.error(error);\n  });`,
+                    python: `import requests\n\nurl = "${url}"\n\nresponse = requests.get(url)\ndata = response.json()\n\nprint(data)`,
+                    php: `<?php\n\n$url = '${url}';\n\n$ch = curl_init($url);\ncurl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n$response = curl_exec($ch);\ncurl_close($ch);\n\n$data = json_decode($response, true);\nprint_r($data);`
+                };
+            }
+            
             const code = examples[currentTab] || examples.curl;
             document.getElementById('codeContent').innerHTML = code.split('\n').map((line, i) => `<div class="code-line"><span class="line-number">${i + 1}</span><span>${escapeHtml(line)}</span></div>`).join('');
         }
