@@ -548,6 +548,9 @@
 };
 
         let currentCategory = null, currentEndpoint = null, currentResponse = null, currentTab = 'curl', sidebarSearchQuery = '', isShowingAllApis = false;
+        
+        // Store generated image URL to clear later
+        let currentGeneratedImageUrl = null;
 
         // ============================================
         // LIVE STATS SYSTEM - Real-time Updates
@@ -767,7 +770,7 @@
 
         let visitorTracked = false;
 
-                async function trackVisitorOnPageLoad() {
+        async function trackVisitorOnPageLoad() {
             if (visitorTracked) {
                 console.log('[VISITOR] Already tracked this session');
                 return;
@@ -785,7 +788,7 @@
                 const oneHour = 60 * 60 * 1000;
                 
                 if (!lastVisit || (now - parseInt(lastVisit)) > oneHour) {
-                                    const response = await fetch(`${BACKEND_URL}/stats/visitor`, {
+                    const response = await fetch(`${BACKEND_URL}/stats/visitor`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ 
@@ -1193,6 +1196,9 @@
         }
 
         function showEndpointDetail(category, index) {
+            // Clear any previously generated image when navigating to a new endpoint
+            clearGeneratedImage();
+            
             currentCategory = category;
             currentEndpoint = apiData[category].endpoints[index];
             currentResponse = null;
@@ -1219,7 +1225,21 @@
             window.scrollTo(0, 0);
         }
 
+        // Function to clear generated image
+        function clearGeneratedImage() {
+            const existingImageContainer = document.getElementById('imageResultContainer');
+            if (existingImageContainer) {
+                existingImageContainer.remove();
+            }
+            if (currentGeneratedImageUrl) {
+                URL.revokeObjectURL(currentGeneratedImageUrl);
+                currentGeneratedImageUrl = null;
+            }
+        }
+
         function goBackFromDetail() {
+            // Clear image when going back
+            clearGeneratedImage();
             isShowingAllApis ? showAllApis() : currentCategory ? showApiList(currentCategory) : showHome();
         }
 
@@ -1264,18 +1284,16 @@
             const responseContent = document.getElementById('responseContent');
             const responseTime = document.getElementById('responseTime');
             const testBtnText = document.getElementById('testBtnText');
+            
+            // Clear previous image before testing
+            clearGeneratedImage();
+            
             responseSection.classList.add('active');
             responseStatus.className = 'response-status status-loading';
             responseStatus.innerHTML = '<span class="loading"></span> Sending Request...';
             responseContent.textContent = 'Waiting for response...';
             responseTime.textContent = '';
             testBtnText.textContent = 'Sending...';
-            
-            // Remove any existing image containers
-            const existingImageContainer = document.getElementById('imageResultContainer');
-            if (existingImageContainer) {
-                existingImageContainer.remove();
-            }
             
             const startTime = performance.now();
             
@@ -1298,6 +1316,7 @@
                         // Handle direct image response
                         const blob = await response.blob();
                         const imageUrl = URL.createObjectURL(blob);
+                        currentGeneratedImageUrl = imageUrl; // Store for cleanup
                         
                         responseStatus.className = 'response-status status-success';
                         responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Success - Image Generated (${response.status})`;
@@ -1336,7 +1355,17 @@
                         // Insert after response section
                         responseSection.parentNode.insertBefore(imageContainer, responseSection.nextSibling);
                         
-                        responseContent.textContent = `✅ Image generated successfully!\n\nSize: ${(blob.size / 1024).toFixed(2)} KB\nType: ${blob.type}\n\nThe image is displayed above.`;
+                        // Updated response content with status: true for health check compatibility
+                        const jsonResponse = {
+                            status: true,
+                            creator: "WALUKA🇱🇰",
+                            message: "Image generated successfully",
+                            size: `${(blob.size / 1024).toFixed(2)} KB`,
+                            type: blob.type,
+                            note: "The image is displayed above"
+                        };
+                        currentResponse = jsonResponse;
+                        responseContent.innerHTML = syntaxHighlight(JSON.stringify(jsonResponse, null, 2));
                         
                     } else {
                         // Handle JSON error response
@@ -1424,22 +1453,23 @@
 
         function updateCodeExamples() {
             const url = buildRequestUrl();
-            
-            // Check if this is an image endpoint (AI Art)
             const isImageEndpoint = currentEndpoint.responseType === 'image' || currentEndpoint.path.includes('artai');
             
             let examples;
             
             if (isImageEndpoint) {
-                // Image-specific code examples for AI Art Generator
+                // AI Art Generator code examples with proper image handling
                 examples = {
-                    curl: `curl -X GET "${url}" \\\n  -H "Accept: image/jpeg,image/png" \\\n  --output ai-art.jpg`,
-                    node: `const fs = require('fs');\nconst https = require('https');\n\nconst url = '${url}';\n\nhttps.get(url, (response) => {\n  if (response.headers['content-type'].includes('image')) {\n    const fileStream = fs.createWriteStream('ai-art.jpg');\n    response.pipe(fileStream);\n    fileStream.on('finish', () => {\n      console.log('Image saved as ai-art.jpg');\n    });\n  } else {\n    let data = '';\n    response.on('data', chunk => data += chunk);\n    response.on('end', () => console.log(JSON.parse(data)));\n  }\n}).on('error', (err) => console.error('Error:', err));`,
-                    python: `import requests\n\nurl = "${url}"\n\nresponse = requests.get(url)\n\n# Check if response is an image\nif 'image' in response.headers.get('Content-Type', ''):\n    with open('ai-art.jpg', 'wb') as f:\n        f.write(response.content)\n    print("Image saved as ai-art.jpg")\nelse:\n    data = response.json()\n    print(data)`,
-                    php: `<?php\n\n$url = '${url}';\n\n$ch = curl_init($url);\ncurl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n$response = curl_exec($ch);\n$contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);\ncurl_close($ch);\n\nif (strpos($contentType, 'image') !== false) {\n    file_put_contents('ai-art.jpg', $response);\n    echo "Image saved as ai-art.jpg";\n} else {\n    $data = json_decode($response, true);\n    print_r($data);\n}`
+                    curl: `# Download image directly\ncurl -X GET "${url}" \\\n  -H "Accept: image/jpeg,image/png" \\\n  --output "ai-art-${Date.now()}.jpg"\n\n# Or get as JSON (base64)\ncurl -X GET "${url}/json" \\\n  -H "Accept: application/json"`,
+                    
+                    node: `const fs = require('fs');\nconst https = require('https');\n\nconst url = '${url}';\n\n// Download image directly\nhttps.get(url, { headers: { 'Accept': 'image/jpeg' } }, (response) => {\n  if (response.headers['content-type'].includes('image')) {\n    const filename = 'ai-art-${Date.now()}.jpg';\n    const fileStream = fs.createWriteStream(filename);\n    response.pipe(fileStream);\n    fileStream.on('finish', () => {\n      console.log('Image saved:', filename);\n    });\n  } else {\n    // Handle JSON response\n    let data = '';\n    response.on('data', chunk => data += chunk);\n    response.on('end', () => {\n      const json = JSON.parse(data);\n      console.log(json);\n      // If base64 image: Buffer.from(json.result.image.split(',')[1], 'base64')\n    });\n  }\n}).on('error', (err) => {\n  console.error('Error:', err.message);\n});`,
+                    
+                    python: `import requests\n\nurl = "${url}"\n\n# Download image directly\nresponse = requests.get(url, headers={'Accept': 'image/jpeg'})\n\nif response.headers.get('Content-Type', '').startswith('image'):\n    # Save image\n    filename = f"ai-art-${Date.now()}.jpg"\n    with open(filename, 'wb') as f:\n        f.write(response.content)\n    print(f"Image saved: {filename}")\nelse:\n    # Handle JSON response\n    data = response.json()\n    print(data)\n    # If base64 image:\n    # import base64\n    # image_data = base64.b64decode(data['result']['image'].split(',')[1])\n    # with open('image.jpg', 'wb') as f:\n    #     f.write(image_data)`,
+                    
+                    php: `<?php\n\n$url = '${url}';\n\n$ch = curl_init($url);\ncurl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\ncurl_setopt($ch, CURLOPT_HTTPHEADER, ['Accept: image/jpeg']);\n$response = curl_exec($ch);\n$contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);\ncurl_close($ch);\n\nif (strpos($contentType, 'image') !== false) {\n    // Save image\n    $filename = 'ai-art-' . time() . '.jpg';\n    file_put_contents($filename, $response);\n    echo "Image saved: $filename";\n} else {\n    // Handle JSON response\n    $data = json_decode($response, true);\n    print_r($data);\n    // If base64 image:\n    // $imageData = base64_decode(explode(',', $data['result']['image'])[1]);\n    // file_put_contents('image.jpg', $imageData);\n}`
                 };
             } else {
-                // Regular JSON code examples
+                // Regular JSON endpoints
                 examples = {
                     curl: `curl -X GET "${url}" \\\n  -H "Accept: application/json"`,
                     node: `const axios = require('axios');\n\nconst url = '${url}';\n\naxios.get(url)\n  .then(response => {\n    console.log(response.data);\n  })\n  .catch(error => {\n    console.error(error);\n  });`,
@@ -1512,6 +1542,10 @@
 
         window.addEventListener('beforeunload', () => {
             liveStats.disconnect();
+            // Clean up any generated image URLs
+            if (currentGeneratedImageUrl) {
+                URL.revokeObjectURL(currentGeneratedImageUrl);
+            }
         });
     </script>
 </body>
