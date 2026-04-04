@@ -1,4 +1,4 @@
-// server.js - Koyeb Optimized with Fixed Health Check & Website URL
+// server.js - Koyeb Optimized with AI Art Generator
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -17,7 +17,7 @@ const freefireinfo = require('./api/freefireinfo');
 const maker = require('./api/textphoto');
 const youtubedl2 = require('./api/youtubedl2');
 const chatgptai = require('./api/chatgptai');
-const generateAIArt = require('./api/artai'); // ← NEW: AI Art Generator
+const artai = require('./api/artai'); // AI Art Generator
 
 const app = express();
 
@@ -34,11 +34,31 @@ app.use(express.json());
 // ============================================
 
 function getWebsiteUrl() {
-    if (process.env.WEBSITE_URL) return process.env.WEBSITE_URL;
-    if (process.env.KOYEB_PUBLIC_DOMAIN) return `https://${process.env.KOYEB_PUBLIC_DOMAIN}`;
-    if (process.env.KOYEB_APP_NAME) return `https://${process.env.KOYEB_APP_NAME}.koyeb.app`;
-    if (process.env.RAILWAY_PUBLIC_DOMAIN) return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
-    if (process.env.RENDER_EXTERNAL_URL) return process.env.RENDER_EXTERNAL_URL;
+    // Priority: Environment variable > Koyeb automatic detection > Fallback
+    if (process.env.WEBSITE_URL) {
+        return process.env.WEBSITE_URL;
+    }
+    
+    // Koyeb provides this environment variable
+    if (process.env.KOYEB_PUBLIC_DOMAIN) {
+        return `https://${process.env.KOYEB_PUBLIC_DOMAIN}`;
+    }
+    
+    // Koyeb app URL format
+    if (process.env.KOYEB_APP_NAME) {
+        return `https://${process.env.KOYEB_APP_NAME}.koyeb.app`;
+    }
+    
+    // Railway, Render, etc.
+    if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+        return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
+    }
+    
+    if (process.env.RENDER_EXTERNAL_URL) {
+        return process.env.RENDER_EXTERNAL_URL;
+    }
+    
+    // Default fallback
     const port = process.env.PORT || 3000;
     return `http://localhost:${port}`;
 }
@@ -54,6 +74,12 @@ const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const GITHUB_REPO_OWNER = process.env.GITHUB_REPO_OWNER || 'Walukapah';
 const GITHUB_REPO_NAME = process.env.GITHUB_REPO_NAME || 'SRI-API-STORE';
 
+console.log('[GITHUB] Environment check:');
+console.log('[GITHUB] GITHUB_TOKEN exists:', !!GITHUB_TOKEN);
+console.log('[GITHUB] GITHUB_TOKEN length:', GITHUB_TOKEN ? GITHUB_TOKEN.length : 0);
+console.log('[GITHUB] GITHUB_REPO_OWNER:', GITHUB_REPO_OWNER);
+console.log('[GITHUB] GITHUB_REPO_NAME:', GITHUB_REPO_NAME);
+
 let octokit = null;
 let githubEnabled = false;
 
@@ -64,16 +90,17 @@ if (GITHUB_TOKEN && GITHUB_TOKEN.length > 10 && !GITHUB_TOKEN.includes('your')) 
         console.log('[GITHUB] Octokit initialized successfully');
     } catch (error) {
         console.error('[GITHUB] Failed to initialize Octokit:', error.message);
+        githubEnabled = false;
     }
 } else {
     console.warn('[GITHUB] GITHUB_TOKEN not set, too short, or contains placeholder text');
 }
 
-const STATS_FILE = 'api_stats.json';
+const STATS_FILE = 'api_stats1.json';
 const HEALTH_FILE = 'api_health.json';
 
 // ============================================
-// ENDPOINT NAME MAPPING
+// ENDPOINT NAME MAPPING - Consistent naming
 // ============================================
 
 const ENDPOINT_NAME_MAP = {
@@ -84,7 +111,7 @@ const ENDPOINT_NAME_MAP = {
     'textphoto': 'Text to Photo',
     'freefire': 'Free Fire Player Info',
     'chatgpt': 'ChatGPT AI Chat',
-    'artai': 'AI Art Generator'
+    'art': 'AI Art Generator'
 };
 
 function getEndpointName(path) {
@@ -97,23 +124,26 @@ function getEndpointName(path) {
 }
 
 // ============================================
-// STATS SYSTEM
+// STATS SYSTEM - OPTIMIZED (Only today's visitors stored)
 // ============================================
 
 let stats = {
     apiCalls: 0,
-    visitors: 0,
-    totalVisitors: 0,
-    visitorData: {},
+    visitors: 0,           // Today's unique visitor count
+    totalVisitors: 0,      // Total unique visitors (all time)
+    visitorData: {},       // Only today's visitor hashes { hash: timestamp }
     endpointCalls: {},
     lastUpdated: new Date().toISOString(),
-    lastVisitorDate: null
+    lastVisitorDate: null  // Track which day visitorData is for
 };
 
+// Track recently counted requests to prevent double counting
 const recentRequests = new Map();
-const REQUEST_CACHE_TIMEOUT = 5000;
+const REQUEST_CACHE_TIMEOUT = 5000; // 5 seconds
+
+// Track recent visitors to prevent duplicate counting (in-memory, per server instance)
 const recentVisitors = new Map();
-const VISITOR_COOLDOWN = 60000;
+const VISITOR_COOLDOWN = 60000; // 1 minute cooldown for same visitor
 
 function getTodayString() {
     return new Date().toISOString().split('T')[0];
@@ -149,39 +179,61 @@ function wasRecentlyCounted(fingerprint) {
     return false;
 }
 
+// ============================================
+// VISITOR ROLLING SYSTEM - Key optimization
+// ============================================
+
 function checkAndRollVisitors() {
     const today = getTodayString();
+    
+    // If we have visitor data from a different day, roll it to total
     if (stats.lastVisitorDate && stats.lastVisitorDate !== today) {
         const yesterdayCount = Object.keys(stats.visitorData || {}).length;
         stats.totalVisitors += yesterdayCount;
         stats.visitors = 0;
         stats.visitorData = {};
         stats.lastVisitorDate = today;
-        console.log(`[STATS] Rolled visitors: ${yesterdayCount} added to total (${stats.totalVisitors})`);
-        return true;
+        
+        console.log(`[STATS] 🔄 Rolled visitors: ${yesterdayCount} from ${stats.lastVisitorDate} added to total (${stats.totalVisitors})`);
+        return true; // Indicates a roll happened
     }
+    
+    // Initialize if first time
     if (!stats.lastVisitorDate) {
         stats.lastVisitorDate = today;
     }
+    
     return false;
 }
 
 function addVisitor(visitorHash) {
+    // Check if we need to roll to a new day
     checkAndRollVisitors();
+    
     const today = getTodayString();
-    if (!stats.visitorData) stats.visitorData = {};
+    
+    // Initialize visitor data for today if needed
+    if (!stats.visitorData) {
+        stats.visitorData = {};
+    }
+    
+    // Check if this is a new visitor for today
     if (!stats.visitorData[visitorHash]) {
         stats.visitorData[visitorHash] = new Date().toISOString();
         stats.visitors = Object.keys(stats.visitorData).length;
         stats.lastUpdated = new Date().toISOString();
+        
+        // Broadcast update to all connected clients
         broadcastStatsUpdate();
-        return true;
+        
+        return true; // New visitor
     }
-    return false;
+    
+    return false; // Already counted today
 }
 
 // ============================================
-// LIVE UPDATE SYSTEM
+// LIVE UPDATE SYSTEM - Server-Sent Events
 // ============================================
 
 const sseClients = new Set();
@@ -189,6 +241,7 @@ const sseClients = new Set();
 function broadcastStatsUpdate() {
     const todayCount = stats.visitors || 0;
     const totalCount = (stats.totalVisitors || 0) + todayCount;
+    
     const updateData = {
         apiCalls: stats.apiCalls,
         visitors: todayCount,
@@ -197,11 +250,17 @@ function broadcastStatsUpdate() {
         lastUpdated: stats.lastUpdated,
         timestamp: new Date().toISOString()
     };
+    
+    // Broadcast to all connected SSE clients
     sseClients.forEach(client => {
         try {
             client.write(`data: ${JSON.stringify(updateData)}\n\n`);
-        } catch (e) {}
+        } catch (e) {
+            // Client disconnected, will be cleaned up
+        }
     });
+    
+    console.log(`[LIVE] Broadcasting stats: ${updateData.apiCalls} calls, ${totalCount} visitors (${sseClients.size} clients)`);
 }
 
 // ============================================
@@ -224,11 +283,12 @@ const ENDPOINTS_TO_CHECK = [
     { name: 'Text to Photo', path: '/download/textphoto', method: 'GET', testParams: { url: 'https://textpro.me/create-naruto-logo-style-text-effect-online-1125.html', text: 'Test' } },
     { name: 'Free Fire Player Info', path: '/search/freefire', method: 'GET', testParams: { region: 'SG', uid: '2326343985' } },
     { name: 'ChatGPT AI', path: '/ai/chatgpt', method: 'GET', testParams: { prompt: 'Hello' } },
-    { name: 'AI Art Generator', path: '/ai/artai', method: 'GET', testParams: { prompt: 'a dragon' } }
+    // AI Art Generator - Added for health check
+    { name: 'AI Art Generator', path: '/ai/art', method: 'GET', testParams: { prompt: 'a beautiful sunset' } }
 ];
 
 // ============================================
-// GITHUB FUNCTIONS
+// GITHUB FUNCTIONS - STATS
 // ============================================
 
 async function testGitHubConnection() {
@@ -249,33 +309,109 @@ async function testGitHubConnection() {
 }
 
 async function loadStatsFromGitHub() {
-    if (!githubEnabled || !octokit) return false;
+    if (!githubEnabled || !octokit) {
+        console.log('[STATS] GitHub not enabled, skipping GitHub load');
+        return false;
+    }
+
     const connected = await testGitHubConnection();
     if (!connected) {
         githubEnabled = false;
         return false;
     }
+
     try {
+        console.log('[STATS] Loading stats from GitHub...');
         const { data } = await octokit.repos.getContent({
             owner: GITHUB_REPO_OWNER,
             repo: GITHUB_REPO_NAME,
             path: STATS_FILE
         });
+
         const content = Buffer.from(data.content, 'base64').toString('utf8');
         const parsedStats = JSON.parse(content);
-        // ... (same as before)
+        
+        // Handle both old and new format
+        if (parsedStats.visitors && typeof parsedStats.visitors === 'object' && !Array.isArray(parsedStats.visitors)) {
+            // Old format detected - convert to new format
+            if (parsedStats.visitors['2026-03-23'] || parsedStats.visitors['2026-03-24']) {
+                console.log('[STATS] Converting from old format to new format...');
+                
+                // Calculate total from old format
+                let totalUniqueVisitors = 0;
+                Object.values(parsedStats.visitors).forEach(dayVisitors => {
+                    totalUniqueVisitors += Object.keys(dayVisitors).length;
+                });
+                
+                // Keep only today's data
+                const today = getTodayString();
+                const todayData = parsedStats.visitors[today] || {};
+                
+                stats = {
+                    apiCalls: parsedStats.apiCalls || 0,
+                    visitors: Object.keys(todayData).length,
+                    totalVisitors: totalUniqueVisitors,
+                    visitorData: todayData,
+                    endpointCalls: parsedStats.endpointCalls || {},
+                    lastUpdated: parsedStats.lastUpdated || new Date().toISOString(),
+                    lastVisitorDate: today
+                };
+                
+                console.log(`[STATS] Converted: ${stats.visitors} today, ${stats.totalVisitors} total`);
+            } else {
+                // Already new format or single day
+                stats.apiCalls = parsedStats.apiCalls || 0;
+                stats.visitors = parsedStats.visitors || 0;
+                stats.totalVisitors = parsedStats.totalVisitors || 0;
+                stats.visitorData = parsedStats.visitorData || {};
+                stats.endpointCalls = parsedStats.endpointCalls || {};
+                stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
+                stats.lastVisitorDate = parsedStats.lastVisitorDate || getTodayString();
+            }
+        } else {
+            // New format directly
+            stats.apiCalls = parsedStats.apiCalls || 0;
+            stats.visitors = parsedStats.visitors || 0;
+            stats.totalVisitors = parsedStats.totalVisitors || 0;
+            stats.visitorData = parsedStats.visitorData || {};
+            stats.endpointCalls = parsedStats.endpointCalls || {};
+            stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
+            stats.lastVisitorDate = parsedStats.lastVisitorDate || getTodayString();
+        }
+        
+        // Check if we need to roll visitors on load
+        checkAndRollVisitors();
+        
+        // Clean up old endpoint names if any
+        const cleanedEndpoints = {};
+        Object.keys(stats.endpointCalls).forEach(key => {
+            const cleanKey = ENDPOINT_NAME_MAP[key] || key;
+            cleanedEndpoints[cleanKey] = (cleanedEndpoints[cleanKey] || 0) + stats.endpointCalls[key];
+        });
+        stats.endpointCalls = cleanedEndpoints;
+        
         saveStatsToLocal();
+        
+        console.log(`[STATS] Loaded from GitHub: ${stats.apiCalls} calls, ${stats.visitors} visitors today, ${stats.totalVisitors} total`);
+        console.log(`[STATS] Endpoints:`, stats.endpointCalls);
         return true;
     } catch (error) {
-        if (error.status === 404) return true;
+        if (error.status === 404) {
+            console.log('[STATS] No existing stats file on GitHub, will create new one');
+            return true;
+        }
+        console.error('[STATS] Failed to load from GitHub:', error.message);
         return false;
     }
 }
 
 async function saveStatsToGitHub() {
     if (!githubEnabled || !octokit) return false;
+
     try {
+        // Check and roll visitors before saving
         checkAndRollVisitors();
+        
         const statsData = {
             apiCalls: stats.apiCalls,
             visitors: stats.visitors,
@@ -285,6 +421,7 @@ async function saveStatsToGitHub() {
             lastUpdated: new Date().toISOString(),
             lastVisitorDate: stats.lastVisitorDate
         };
+
         let sha = null;
         try {
             const { data } = await octokit.repos.getContent({
@@ -293,33 +430,54 @@ async function saveStatsToGitHub() {
                 path: STATS_FILE
             });
             sha = data.sha;
-        } catch (err) {}
+        } catch (err) {
+            if (err.status !== 404) console.error('[STATS] Error getting file SHA:', err.message);
+        }
+
         const contentEncoded = Buffer.from(JSON.stringify(statsData, null, 2)).toString('base64');
+
         await octokit.repos.createOrUpdateFileContents({
             owner: GITHUB_REPO_OWNER,
             repo: GITHUB_REPO_NAME,
             path: STATS_FILE,
-            message: `Update API stats - ${stats.apiCalls} calls`,
+            message: `Update API stats - ${stats.apiCalls} calls, ${stats.visitors} today, ${stats.totalVisitors} total`,
             content: contentEncoded,
             sha: sha || undefined,
         });
+
+        console.log(`[STATS] ✅ Saved to GitHub: ${stats.apiCalls} calls, ${stats.visitors} visitors today, ${stats.totalVisitors} total`);
         return true;
     } catch (error) {
-        if (error.status === 401) githubEnabled = false;
+        console.error('[STATS] ❌ Failed to save to GitHub:', error.message);
+        if (error.status === 401) {
+            console.error('[STATS] Token became invalid, disabling GitHub backup');
+            githubEnabled = false;
+        }
         return false;
     }
 }
 
+// ============================================
+// GITHUB FUNCTIONS - HEALTH STATUS
+// ============================================
+
 async function loadHealthFromGitHub() {
-    if (!githubEnabled || !octokit) return loadHealthFromLocal();
+    if (!githubEnabled || !octokit) {
+        console.log('[HEALTH] GitHub not enabled, loading from local');
+        return loadHealthFromLocal();
+    }
+
     try {
+        console.log('[HEALTH] Loading health status from GitHub...');
         const { data } = await octokit.repos.getContent({
             owner: GITHUB_REPO_OWNER,
             repo: GITHUB_REPO_NAME,
             path: HEALTH_FILE
         });
+
         const content = Buffer.from(data.content, 'base64').toString('utf8');
         const parsedHealth = JSON.parse(content);
+        
         healthStatus = {
             lastCheckDate: parsedHealth.lastCheckDate || null,
             lastCheckTime: parsedHealth.lastCheckTime || null,
@@ -327,15 +485,24 @@ async function loadHealthFromGitHub() {
             endpoints: parsedHealth.endpoints || {},
             summary: parsedHealth.summary || { online: 0, offline: 0, total: 0 }
         };
+        
         saveHealthToLocal();
+        
+        console.log(`[HEALTH] Loaded from GitHub: ${healthStatus.summary.online}/${healthStatus.summary.total} online`);
         return true;
     } catch (error) {
+        if (error.status === 404) {
+            console.log('[HEALTH] No existing health file on GitHub');
+            return loadHealthFromLocal();
+        }
+        console.error('[HEALTH] Failed to load from GitHub:', error.message);
         return loadHealthFromLocal();
     }
 }
 
 async function saveHealthToGitHub() {
     if (!githubEnabled || !octokit) return false;
+
     try {
         let sha = null;
         try {
@@ -345,25 +512,38 @@ async function saveHealthToGitHub() {
                 path: HEALTH_FILE
             });
             sha = data.sha;
-        } catch (err) {}
+        } catch (err) {
+            if (err.status !== 404) console.error('[HEALTH] Error getting file SHA:', err.message);
+        }
+
         const contentEncoded = Buffer.from(JSON.stringify(healthStatus, null, 2)).toString('base64');
+
         await octokit.repos.createOrUpdateFileContents({
             owner: GITHUB_REPO_OWNER,
             repo: GITHUB_REPO_NAME,
             path: HEALTH_FILE,
-            message: `Update API health - ${healthStatus.summary.online}/${healthStatus.summary.total} online`,
+            message: `Update API health - ${healthStatus.summary.online}/${healthStatus.summary.total} online - ${new Date().toISOString()}`,
             content: contentEncoded,
             sha: sha || undefined,
         });
+
+        console.log(`[HEALTH] ✅ Saved to GitHub: ${healthStatus.summary.online}/${healthStatus.summary.total} online`);
         return true;
     } catch (error) {
+        console.error('[HEALTH] ❌ Failed to save to GitHub:', error.message);
         return false;
     }
 }
 
+// ============================================
+// LOCAL STORAGE FUNCTIONS
+// ============================================
+
 function saveStatsToLocal() {
     try {
+        // Check and roll visitors before saving
         checkAndRollVisitors();
+        
         const statsData = {
             apiCalls: stats.apiCalls,
             visitors: stats.visitors,
@@ -376,6 +556,7 @@ function saveStatsToLocal() {
         fs.writeFileSync(`./${STATS_FILE}`, JSON.stringify(statsData, null, 2));
         return true;
     } catch (error) {
+        console.error('[STATS] Failed to save locally:', error.message);
         return false;
     }
 }
@@ -385,10 +566,68 @@ function loadStatsFromLocal() {
         if (fs.existsSync(`./${STATS_FILE}`)) {
             const content = fs.readFileSync(`./${STATS_FILE}`, 'utf8');
             const parsedStats = JSON.parse(content);
-            // ... (same conversion logic)
+            
+            // Handle both old and new format
+            if (parsedStats.visitors && typeof parsedStats.visitors === 'object' && !Array.isArray(parsedStats.visitors)) {
+                // Old format detected - convert
+                if (parsedStats.visitors['2026-03-23'] || parsedStats.visitors['2026-03-24']) {
+                    console.log('[STATS] Converting local file from old format...');
+                    
+                    let totalUniqueVisitors = 0;
+                    Object.values(parsedStats.visitors).forEach(dayVisitors => {
+                        totalUniqueVisitors += Object.keys(dayVisitors).length;
+                    });
+                    
+                    const today = getTodayString();
+                    const todayData = parsedStats.visitors[today] || {};
+                    
+                    stats = {
+                        apiCalls: parsedStats.apiCalls || 0,
+                        visitors: Object.keys(todayData).length,
+                        totalVisitors: totalUniqueVisitors,
+                        visitorData: todayData,
+                        endpointCalls: parsedStats.endpointCalls || {},
+                        lastUpdated: parsedStats.lastUpdated || new Date().toISOString(),
+                        lastVisitorDate: today
+                    };
+                } else {
+                    // Already new format
+                    stats.apiCalls = parsedStats.apiCalls || 0;
+                    stats.visitors = parsedStats.visitors || 0;
+                    stats.totalVisitors = parsedStats.totalVisitors || 0;
+                    stats.visitorData = parsedStats.visitorData || {};
+                    stats.endpointCalls = parsedStats.endpointCalls || {};
+                    stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
+                    stats.lastVisitorDate = parsedStats.lastVisitorDate || getTodayString();
+                }
+            } else {
+                // New format directly
+                stats.apiCalls = parsedStats.apiCalls || 0;
+                stats.visitors = parsedStats.visitors || 0;
+                stats.totalVisitors = parsedStats.totalVisitors || 0;
+                stats.visitorData = parsedStats.visitorData || {};
+                stats.endpointCalls = parsedStats.endpointCalls || {};
+                stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
+                stats.lastVisitorDate = parsedStats.lastVisitorDate || getTodayString();
+            }
+            
+            // Check if we need to roll visitors
+            checkAndRollVisitors();
+            
+            // Clean up old endpoint names
+            const cleanedEndpoints = {};
+            Object.keys(stats.endpointCalls).forEach(key => {
+                const cleanKey = ENDPOINT_NAME_MAP[key] || key;
+                cleanedEndpoints[cleanKey] = (cleanedEndpoints[cleanKey] || 0) + stats.endpointCalls[key];
+            });
+            stats.endpointCalls = cleanedEndpoints;
+            
+            console.log(`[STATS] Loaded from local: ${stats.apiCalls} calls, ${stats.visitors} today, ${stats.totalVisitors} total`);
             return true;
         }
-    } catch (error) {}
+    } catch (error) {
+        console.error('[STATS] Failed to load from local:', error.message);
+    }
     return false;
 }
 
@@ -397,6 +636,7 @@ function saveHealthToLocal() {
         fs.writeFileSync(`./${HEALTH_FILE}`, JSON.stringify(healthStatus, null, 2));
         return true;
     } catch (error) {
+        console.error('[HEALTH] Failed to save locally:', error.message);
         return false;
     }
 }
@@ -406,6 +646,7 @@ function loadHealthFromLocal() {
         if (fs.existsSync(`./${HEALTH_FILE}`)) {
             const content = fs.readFileSync(`./${HEALTH_FILE}`, 'utf8');
             const parsedHealth = JSON.parse(content);
+            
             healthStatus = {
                 lastCheckDate: parsedHealth.lastCheckDate || null,
                 lastCheckTime: parsedHealth.lastCheckTime || null,
@@ -413,11 +654,19 @@ function loadHealthFromLocal() {
                 endpoints: parsedHealth.endpoints || {},
                 summary: parsedHealth.summary || { online: 0, offline: 0, total: 0 }
             };
+            
+            console.log(`[HEALTH] Loaded from local: ${healthStatus.summary.online}/${healthStatus.summary.total} online`);
             return true;
         }
-    } catch (error) {}
+    } catch (error) {
+        console.error('[HEALTH] Failed to load from local:', error.message);
+    }
     return false;
 }
+
+// ============================================
+// AUTO SAVE
+// ============================================
 
 function startAutoSave() {
     setInterval(async () => {
@@ -426,7 +675,7 @@ function startAutoSave() {
             await saveStatsToGitHub();
             await saveHealthToGitHub();
         }
-    }, 60000);
+    }, 60000); // Every 1 minute
     console.log('[SYSTEM] Auto-save started (every 1 minute)');
 }
 
@@ -450,36 +699,58 @@ function getNextCheckTime() {
     const now = getSriLankanTime();
     const nextCheck = new Date(now);
     nextCheck.setHours(0, 0, 0, 0);
+    
+    // If we've passed 12:00 AM, next check is tomorrow
     if (now.getHours() > 0 || (now.getHours() === 0 && now.getMinutes() > 0)) {
         nextCheck.setDate(nextCheck.getDate() + 1);
     }
+    
     return nextCheck;
 }
 
 async function checkSingleEndpoint(endpoint) {
+    // Use WEBSITE_URL instead of localhost
     let testUrl = `${WEBSITE_URL}${endpoint.path}`;
+    
+    // Build query string from test params
     if (endpoint.testParams) {
         const params = new URLSearchParams(endpoint.testParams);
         testUrl += '?' + params.toString();
     }
+    
+    console.log(`[HEALTH CHECK] Testing: ${endpoint.name} at ${testUrl}`);
+    
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+        
         const response = await fetch(testUrl, { 
             method: 'GET', 
             signal: controller.signal,
             headers: { 'Accept': 'application/json' }
         });
+        
         clearTimeout(timeoutId);
+        
         let isOnline = false;
         let responseData = null;
+        
         if (response.ok) {
             try {
                 const data = await response.json();
                 responseData = data;
-                if (data && data.status === true) isOnline = true;
-            } catch (e) {}
+                // Check if response has status: true
+                if (data && data.status === true) {
+                    isOnline = true;
+                }
+            } catch (e) {
+                // If JSON parsing fails but response was OK, consider offline
+                isOnline = false;
+            }
         }
+        
+        console.log(`[HEALTH CHECK] ${endpoint.name}: ${isOnline ? 'ONLINE ✅' : 'OFFLINE ❌'} (status: ${response.status})`);
+        
         return {
             name: endpoint.name,
             path: endpoint.path,
@@ -488,7 +759,9 @@ async function checkSingleEndpoint(endpoint) {
             responseStatus: response.status,
             hasStatusTrue: responseData ? responseData.status === true : false
         };
+        
     } catch (error) {
+        console.log(`[HEALTH CHECK] ${endpoint.name}: OFFLINE ❌ (${error.message})`);
         return {
             name: endpoint.name,
             path: endpoint.path,
@@ -502,16 +775,28 @@ async function checkSingleEndpoint(endpoint) {
 async function performDailyHealthCheck(force = false) {
     const now = getSriLankanTime();
     const today = getSriLankanDateString();
+    
+    console.log(`[HEALTH CHECK] Starting check at ${formatSriLankanTime(now)}`);
+    console.log(`[HEALTH CHECK] Today: ${today}, Last check: ${healthStatus.lastCheckDate}`);
+    
+    // Check if already done today (unless forced)
     if (!force && healthStatus.lastCheckDate === today) {
+        console.log(`[HEALTH CHECK] Already completed today at ${healthStatus.lastCheckTime}`);
         return healthStatus.summary;
     }
+    
+    // Perform checks for all endpoints
     const results = [];
     for (const endpoint of ENDPOINTS_TO_CHECK) {
         const result = await checkSingleEndpoint(endpoint);
         results.push(result);
     }
+    
+    // Calculate summary
     const online = results.filter(r => r.status === 'online').length;
     const offline = results.filter(r => r.status === 'offline').length;
+    
+    // Update health status
     healthStatus = {
         lastCheckDate: today,
         lastCheckTime: formatSriLankanTime(now),
@@ -520,10 +805,21 @@ async function performDailyHealthCheck(force = false) {
             acc[curr.name] = curr;
             return acc;
         }, {}),
-        summary: { online, offline, total: results.length }
+        summary: {
+            online: online,
+            offline: offline,
+            total: results.length
+        }
     };
+    
+    // Save to GitHub and local
     saveHealthToLocal();
-    if (githubEnabled) await saveHealthToGitHub();
+    if (githubEnabled) {
+        await saveHealthToGitHub();
+    }
+    
+    console.log(`[HEALTH CHECK] ✅ Completed: ${online}/${results.length} online, ${offline} offline`);
+    
     return healthStatus.summary;
 }
 
@@ -531,28 +827,60 @@ function checkMissedHealthCheck() {
     const now = getSriLankanTime();
     const today = getSriLankanDateString();
     const currentHour = now.getHours();
-    if (healthStatus.lastCheckDate !== today && currentHour >= 0 && currentHour < 2) {
-        performDailyHealthCheck(true);
-        return true;
+    const currentMinute = now.getMinutes();
+    
+    console.log(`[HEALTH CHECK] Checking missed check: today=${today}, lastCheck=${healthStatus.lastCheckDate}, hour=${currentHour}`);
+    
+    // If it's after 12:00 AM and health check hasn't been done today, do it now
+    if (healthStatus.lastCheckDate !== today) {
+        // Check if we're in the "missed window" (12:00 AM to 1:00 AM)
+        // or if server was down during 12:00 AM
+        if (currentHour >= 0 && currentHour < 2) {
+            console.log(`[HEALTH CHECK] Missed 12:00 AM check detected, running now...`);
+            performDailyHealthCheck(true);
+            return true;
+        }
     }
+    
     return false;
 }
 
+let healthCheckInterval = null;
+let nextCheckUpdateInterval = null;
+
 function startDailyHealthCheckScheduler() {
-    checkMissedHealthCheck();
-    setInterval(() => {
+    // Check immediately if we missed the 12 AM check (server was down)
+    const missed = checkMissedHealthCheck();
+    
+    if (!missed) {
+        console.log(`[HEALTH CHECK] Scheduler started. Last check: ${healthStatus.lastCheckDate || 'Never'}`);
+    }
+    
+    // Clear any existing intervals
+    if (healthCheckInterval) clearInterval(healthCheckInterval);
+    if (nextCheckUpdateInterval) clearInterval(nextCheckUpdateInterval);
+    
+    // Check every minute if it's time for the daily check
+    healthCheckInterval = setInterval(() => {
         const now = getSriLankanTime();
         const today = getSriLankanDateString();
+        
+        // Check if it's 12:00 AM and we haven't checked today
         if (now.getHours() === 0 && now.getMinutes() === 0) {
             if (healthStatus.lastCheckDate !== today) {
+                console.log('[HEALTH CHECK] 12:00 AM - Starting daily check...');
                 performDailyHealthCheck();
             }
         }
-    }, 60000);
-    setInterval(() => {
+    }, 60000); // Check every minute
+    
+    // Also update next check time display every minute
+    nextCheckUpdateInterval = setInterval(() => {
         healthStatus.nextCheckTime = formatSriLankanTime(getNextCheckTime());
         if (githubEnabled) saveHealthToGitHub();
     }, 60000);
+    
+    console.log('[HEALTH CHECK] Scheduler active - checking every minute for 12:00 AM');
 }
 
 // ============================================
@@ -562,7 +890,10 @@ function startDailyHealthCheckScheduler() {
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
-  message: { status: false, message: "Too many requests from this IP, please try again later." }
+  message: {
+    status: false,
+    message: "Too many requests from this IP, please try again later."
+  }
 });
 app.use('/download', limiter);
 app.use('/search', limiter);
@@ -575,21 +906,29 @@ app.use('/ai', limiter);
 app.use(['/download', '/search', '/ai'], async (req, res, next) => {
     const path = req.path;
     const validEndpoints = ['/youtubedl', '/youtubedl2', '/tiktokdl', 
-        '/instagramdl', '/textphoto', '/freefire', '/chatgpt', '/artai'];
+        '/instagramdl', '/textphoto', '/freefire', '/chatgpt', '/art'];
     const isValidEndpoint = validEndpoints.some(endpoint => path.includes(endpoint));
+
     if (isValidEndpoint) {
         const endpointName = getEndpointName(path);
         const clientIp = req.headers['x-forwarded-for'] || req.ip || 'unknown';
         const fingerprint = getRequestFingerprint(clientIp, endpointName);
+        
+        // Prevent double counting
         if (wasRecentlyCounted(fingerprint)) {
             console.log(`[API CALL] ➜ ${endpointName} | SKIPPED (duplicate within 5s)`);
             return next();
         }
+
         stats.apiCalls++;
         stats.endpointCalls[endpointName] = (stats.endpointCalls[endpointName] || 0) + 1;
         stats.lastUpdated = new Date().toISOString();
+
         console.log(`[API CALL] ➜ ${endpointName} | Total: ${stats.apiCalls}`);
+
+        // Broadcast live update
         broadcastStatsUpdate();
+
         saveStatsToLocal();
         if (githubEnabled) saveStatsToGitHub().catch(() => {});
     }
@@ -597,25 +936,34 @@ app.use(['/download', '/search', '/ai'], async (req, res, next) => {
 });
 
 // ============================================
-// HEALTH CHECK
+// HEALTH CHECK - Koyeb Optimized
 // ============================================
 
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString(), uptime: process.uptime() });
+  // Simple, fast response - no heavy operations
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
 });
 
 // ============================================
-// STATS ENDPOINTS
+// STATS ENDPOINTS (Updated for Live Updates)
 // ============================================
 
 app.get('/stats', (req, res) => {
+  // Check and roll visitors before responding
   checkAndRollVisitors();
+  
+  // Calculate total visitors (today + historical)
   const todayCount = stats.visitors || 0;
   const totalCount = (stats.totalVisitors || 0) + todayCount;
+  
   res.json({
     apiCalls: stats.apiCalls,
-    visitors: todayCount,
-    totalVisitors: totalCount,
+    visitors: todayCount,           // Today only
+    totalVisitors: totalCount,      // All time
     endpointCalls: stats.endpointCalls,
     lastUpdated: stats.lastUpdated,
     githubBackup: githubEnabled,
@@ -623,13 +971,17 @@ app.get('/stats', (req, res) => {
   });
 });
 
+// NEW: Server-Sent Events endpoint for live stats
 app.get('/stats/stream', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('Access-Control-Allow-Origin', '*');
+    
+    // Send initial data
     const todayCount = stats.visitors || 0;
     const totalCount = (stats.totalVisitors || 0) + todayCount;
+    
     const sendData = () => {
         const data = {
             apiCalls: stats.apiCalls,
@@ -640,15 +992,28 @@ app.get('/stats/stream', (req, res) => {
         };
         res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
+    
     sendData();
+    
+    // Add client to broadcast list
     sseClients.add(res);
-    const heartbeat = setInterval(() => res.write(':heartbeat\n\n'), 30000);
+    
+    // Send heartbeat every 30 seconds to keep connection alive
+    const heartbeat = setInterval(() => {
+        res.write(':heartbeat\n\n');
+    }, 30000);
+    
+    // Clean up on disconnect
     req.on('close', () => {
         clearInterval(heartbeat);
         sseClients.delete(res);
+        console.log(`[LIVE] Client disconnected. Total clients: ${sseClients.size}`);
     });
+    
+    console.log(`[LIVE] New client connected. Total clients: ${sseClients.size}`);
 });
 
+// Health status endpoint for frontend
 app.get('/health/status', (req, res) => {
     res.json({
         lastCheckDate: healthStatus.lastCheckDate,
@@ -662,66 +1027,126 @@ app.get('/health/status', (req, res) => {
 });
 
 // ============================================
-// VISITOR TRACKING
+// VISITOR TRACKING - IMMEDIATE ON PAGE LOAD
 // ============================================
 
+// NEW: Dedicated visitor tracking endpoint (on page load)
 app.post('/stats/visitor', async (req, res) => {
     try {
-        const { visitorId, fingerprint } = req.body;
+        const { visitorId, fingerprint, userAgent, referrer } = req.body;
+        
         const clientIp = req.headers['x-forwarded-for'] || req.ip || 'unknown';
         const vid = visitorId || fingerprint || clientIp;
+        
+        // Create unique key for this visitor (IP + VisitorID combination)
         const visitorKey = `${clientIp}:${vid}`;
         const now = Date.now();
+        
+        // Check if this visitor was recently counted (cooldown period)
         const lastVisit = recentVisitors.get(visitorKey);
         if (lastVisit && (now - lastVisit) < VISITOR_COOLDOWN) {
+            console.log(`[VISITOR] Skipped (cooldown): ${vid.substring(0, 16)}...`);
+            
+            // Still return current stats
             const todayCount = stats.visitors || 0;
             const totalCount = (stats.totalVisitors || 0) + todayCount;
+            
             return res.json({ 
                 success: true, 
                 isNewVisitor: false,
                 skipped: true,
-                stats: { apiCalls: stats.apiCalls, visitors: todayCount, totalVisitors: totalCount } 
+                reason: 'cooldown',
+                stats: { 
+                    apiCalls: stats.apiCalls, 
+                    visitors: todayCount,
+                    totalVisitors: totalCount
+                } 
             });
         }
+        
+        // Update recent visitors map
         recentVisitors.set(visitorKey, now);
+        
+        // Clean up old entries periodically
         if (recentVisitors.size > 1000) {
             const cutoff = now - VISITOR_COOLDOWN;
             for (const [key, timestamp] of recentVisitors.entries()) {
-                if (timestamp < cutoff) recentVisitors.delete(key);
+                if (timestamp < cutoff) {
+                    recentVisitors.delete(key);
+                }
             }
         }
+        
+        // Create hash for storage
         const visitorHash = crypto.createHash('sha256').update(vid).digest('hex').substring(0, 16);
+        
+        // Add visitor (this will check if already counted today)
         const isNewVisitor = addVisitor(visitorHash);
+        
+        // Calculate totals
         const todayCount = stats.visitors || 0;
         const totalCount = (stats.totalVisitors || 0) + todayCount;
+        
+        console.log(`[VISITOR] Tracked: ${vid.substring(0, 16)}... | New: ${isNewVisitor} | Total: ${totalCount}`);
+        
         res.json({ 
             success: true, 
             isNewVisitor: isNewVisitor,
-            stats: { apiCalls: stats.apiCalls, visitors: todayCount, totalVisitors: totalCount } 
+            stats: { 
+                apiCalls: stats.apiCalls, 
+                visitors: todayCount,
+                totalVisitors: totalCount
+            } 
         });
+        
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Failed to track visitor', error: error.message });
+        console.error('[VISITOR] Error:', error.message);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Failed to track visitor',
+            error: error.message
+        });
     }
 });
 
+// Keep old endpoint for backward compatibility
 app.post('/stats/increment', (req, res) => {
   const { type, visitorId } = req.body;
+  
   if (type === 'visitor') {
     const clientIp = req.headers['x-forwarded-for'] || req.ip || 'unknown';
     const vid = visitorId || clientIp;
     const visitorHash = crypto.createHash('sha256').update(vid).digest('hex').substring(0, 16);
+    
+    // Add visitor using new system
     const isNewVisitor = addVisitor(visitorHash);
+    
+    // Calculate totals
     const todayCount = stats.visitors || 0;
     const totalCount = (stats.totalVisitors || 0) + todayCount;
-    res.json({ success: true, isNewVisitor, stats: { apiCalls: stats.apiCalls, visitors: todayCount, totalVisitors: totalCount } });
+    
+    res.json({ 
+        success: true, 
+        isNewVisitor, 
+        stats: { 
+            apiCalls: stats.apiCalls, 
+            visitors: todayCount,
+            totalVisitors: totalCount
+        } 
+    });
   } else {
     res.status(400).json({ success: false, message: 'Invalid type' });
   }
 });
 
+// Manual trigger for health check (for testing)
 app.post('/health/check', async (req, res) => {
     const result = await performDailyHealthCheck(true);
-    res.json({ success: true, message: 'Health check completed', result: result });
+    res.json({
+        success: true,
+        message: 'Health check completed',
+        result: result
+    });
 });
 
 // ============================================
@@ -737,6 +1162,7 @@ app.get('/download/youtubedl', async (req, res) => {
     const youtubeData = await youtubedl(url);
     res.json({ status: true, creator: "WALUKA🇱🇰", result: youtubeData });
   } catch (error) {
+    console.error('API Error:', error);
     res.status(500).json({ status: false, message: error.message });
   }
 });
@@ -750,6 +1176,7 @@ app.get('/download/youtubedl2', async (req, res) => {
     const youtubeData = await youtubedl2(url);
     res.json({ status: true, creator: "WALUKA🇱🇰", result: youtubeData });
   } catch (error) {
+    console.error('API Error:', error);
     res.status(500).json({ status: false, message: error.message });
   }
 });
@@ -787,6 +1214,7 @@ app.get('/search/freefire', async (req, res) => {
     const playerData = await freefireinfo(region, uid);
     res.json({ status: true, creator: "WALUKA🇱🇰", result: playerData });
   } catch (error) {
+    console.error('API Error:', error);
     res.status(500).json({ status: false, message: error.message });
   }
 });
@@ -794,8 +1222,12 @@ app.get('/search/freefire', async (req, res) => {
 app.get('/download/textphoto', async (req, res) => {
   try {
     const { url, text } = req.query;
-    if (!url) return res.status(400).json({ status: false, message: "Please provide a URL parameter" });
-    if (!text) return res.status(400).json({ status: false, message: "Please provide a text parameter" });
+    if (!url) {
+      return res.status(400).json({ status: false, message: "Please provide a URL parameter" });
+    }
+    if (!text) {
+      return res.status(400).json({ status: false, message: "Please provide a text parameter" });
+    }
     const result = await maker(url, text);
     res.json({ status: true, creator: "WALUKA🇱🇰", result: result });
   } catch (error) {
@@ -803,79 +1235,107 @@ app.get('/download/textphoto', async (req, res) => {
   }
 });
 
+// ChatGPT AI Chat
 app.get('/ai/chatgpt', async (req, res) => {
   try {
     const { prompt, sessionId } = req.query;
-    if (!prompt) return res.status(400).json({ status: false, message: "Please provide a prompt parameter" });
+    
+    if (!prompt) {
+      return res.status(400).json({ 
+        status: false, 
+        message: "Please provide a prompt parameter" 
+      });
+    }
+    
     const result = await chatgptai(prompt, sessionId);
+    
     if (result.success) {
-      res.json({ status: true, creator: "WALUKA🇱🇰", result: { query: prompt, response: result.response, model: result.model, sessionId: result.sessionId } });
+      res.json({ 
+        status: true, 
+        creator: "WALUKA🇱🇰", 
+        result: {
+          query: prompt,
+          response: result.response,
+          model: result.model,
+          sessionId: result.sessionId
+        }
+      });
     } else {
-      res.status(500).json({ status: false, message: result.error });
+      res.status(500).json({ 
+        status: false, 
+        message: result.error 
+      });
     }
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    console.error('API Error:', error);
+    res.status(500).json({ 
+      status: false, 
+      message: error.message 
+    });
   }
 });
 
+// Clear chat history
 app.get('/ai/chatgpt/clear', (req, res) => {
   try {
     const { sessionId } = req.query;
     const result = chatgptai.clearHistory(sessionId);
-    res.json({ status: true, creator: "WALUKA🇱🇰", result: result });
-  } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
-  }
-});
-
-// ============================================
-// AI ART GENERATOR - NEW ENDPOINTS
-// ============================================
-
-// AI Art Generator - Returns image directly (for browser display)
-app.get('/ai/artai', async (req, res) => {
-  try {
-    const { prompt } = req.query;
-    if (!prompt) {
-      return res.status(400).json({ status: false, message: "Please provide a prompt parameter" });
-    }
-    console.log(`[AI ART] Generating image for: "${prompt}"`);
-    const imageBuffer = await generateAIArt(prompt);
-    res.setHeader('Content-Type', 'image/jpeg');
-    res.setHeader('Content-Length', imageBuffer.length);
-    res.setHeader('Cache-Control', 'public, max-age=3600');
-    res.setHeader('X-Generated-By', 'SRI API - MagicStudio');
-    res.end(imageBuffer);
-    console.log(`[AI ART] ✅ Image generated successfully (${imageBuffer.length} bytes)`);
-  } catch (error) {
-    console.error('[AI ART] ❌ Error:', error.message);
-    res.status(500).json({ status: false, message: "Failed to generate image", error: error.message });
-  }
-});
-
-// AI Art with JSON response (Base64)
-app.get('/ai/artai/json', async (req, res) => {
-  try {
-    const { prompt } = req.query;
-    if (!prompt) {
-      return res.status(400).json({ status: false, message: "Please provide a prompt parameter" });
-    }
-    console.log(`[AI ART JSON] Generating image for: "${prompt}"`);
-    const imageBuffer = await generateAIArt(prompt);
-    const base64Image = imageBuffer.toString('base64');
-    res.json({
-      status: true,
-      creator: "WALUKA🇱🇰",
-      result: {
-        prompt: prompt,
-        image: `data:image/jpeg;base64,${base64Image}`,
-        format: 'base64',
-        size: imageBuffer.length
-      }
+    res.json({ 
+      status: true, 
+      creator: "WALUKA🇱🇰", 
+      result: result 
     });
   } catch (error) {
-    console.error('[AI ART JSON] Error:', error.message);
-    res.status(500).json({ status: false, message: "Failed to generate image", error: error.message });
+    res.status(500).json({ 
+      status: false, 
+      message: error.message 
+    });
+  }
+});
+
+// AI Art Generator
+app.get('/ai/art', async (req, res) => {
+  try {
+    const { prompt } = req.query;
+    
+    if (!prompt) {
+      return res.status(400).json({ 
+        status: false, 
+        message: "Please provide a prompt parameter" 
+      });
+    }
+
+    // Check if request wants direct image or JSON
+    const acceptHeader = req.headers.accept || '';
+    const wantsImage = acceptHeader.includes('image') || req.query.format === 'image';
+    
+    const result = await artai(prompt);
+    
+    if (wantsImage) {
+      // Return raw image
+      res.setHeader('Content-Type', result.mimeType);
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.send(result.buffer);
+    } else {
+      // Return JSON with base64 data URI
+      res.json({ 
+        status: true, 
+        creator: "WALUKA🇱🇰", 
+        result: {
+          prompt: prompt,
+          imageUrl: result.dataUri,
+          mimeType: result.mimeType,
+          size: result.buffer.length
+        }
+      });
+    }
+    
+  } catch (error) {
+    console.error('AI Art API Error:', error);
+    res.status(500).json({ 
+      status: false, 
+      message: "Failed to generate image: " + error.message 
+    });
   }
 });
 
@@ -906,40 +1366,60 @@ app.use((req, res) => {
       "/search/freefire",
       "/ai/chatgpt",
       "/ai/chatgpt/clear",
-      "/ai/artai",
-      "/ai/artai/json"
+      "/ai/art"
     ]
   });
 });
 
 app.use((err, req, res, next) => {
   console.error('Server Error:', err);
-  res.status(500).json({ status: false, message: "Internal server error", error: process.env.NODE_ENV === 'development' ? err.message : undefined });
+  res.status(500).json({
+    status: false,
+    message: "Internal server error",
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
 });
 
 // ============================================
-// START SERVER
+// START SERVER - Koyeb Optimized
 // ============================================
 
 const PORT = process.env.PORT || 3000;
 
 async function startServer() {
     console.log('[STARTUP] Starting SRI API V3.0...');
+    console.log(`[CONFIG] Environment: ${process.env.NODE_ENV || 'development'}`);
+    
+    // Load stats from GitHub or local
     const githubLoaded = await loadStatsFromGitHub();
     if (!githubLoaded) loadStatsFromLocal();
+    
+    // Load health status from GitHub or local
     await loadHealthFromGitHub();
+    
+    // Start auto-save
     startAutoSave();
+    
+    // IMPORTANT: Bind to 0.0.0.0 for Koyeb
     app.listen(PORT, '0.0.0.0', async () => {
+        // Check and roll visitors on startup
         checkAndRollVisitors();
+        
+        // Perform initial health check if never checked or missed
         const now = getSriLankanTime();
         const todaySL = getSriLankanDateString();
+        
         if (!healthStatus.lastCheckDate || healthStatus.lastCheckDate !== todaySL) {
             console.log('[STARTUP] Running initial health check...');
             await performDailyHealthCheck(true);
         }
+        
+        // Start daily scheduler
         startDailyHealthCheckScheduler();
+        
         const todayCount = stats.visitors || 0;
         const totalCount = (stats.totalVisitors || 0) + todayCount;
+        
         console.log(`
 ╔══════════════════════════════════════════╗
 ║           SRI API V3.0                   ║
@@ -949,6 +1429,9 @@ async function startServer() {
 ║  Stats: ${stats.apiCalls} calls, ${todayCount} today, ${totalCount} total    ║
 ║  Health: ${healthStatus.summary.online}/${healthStatus.summary.total} online              ║
 ║  GitHub Backup: ${githubEnabled ? 'ENABLED ✅' : 'DISABLED ❌'}      ║
+║  Local Backup: ENABLED ✅                ║
+║  Live Updates: ENABLED ✅              ║
+║  Immediate Visitor Count: ENABLED ✅     ║
 ║                                          ║
 ║  Endpoints:                              ║
 ║  • /download/youtubedl                   ║
@@ -958,8 +1441,13 @@ async function startServer() {
 ║  • /download/textphoto                   ║
 ║  • /search/freefire                      ║
 ║  • /ai/chatgpt                           ║
-║  • /ai/artai ⭐ NEW                      ║
-║  • /ai/artai/json ⭐ NEW                 ║
+║  • /ai/chatgpt/clear                     ║
+║  • /ai/art  ← NEW!                       ║
+║                                          ║
+║  Health: /health                         ║
+║  Stats:   /stats                         ║
+║  Live:    /stats/stream                  ║
+║  Visitor: /stats/visitor (POST)          ║
 ╚══════════════════════════════════════════╝
         `);
     });
