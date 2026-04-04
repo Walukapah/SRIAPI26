@@ -1,4 +1,4 @@
-// server.js - Koyeb Optimized with AI Art Generator
+// server.js - Koyeb Optimized with AI Art Generator (FIXED)
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -1293,10 +1293,10 @@ app.get('/ai/chatgpt/clear', (req, res) => {
   }
 });
 
-// AI Art Generator
+// AI Art Generator - FIXED VERSION
 app.get('/ai/art', async (req, res) => {
   try {
-    const { prompt } = req.query;
+    const { prompt, format } = req.query;
     
     if (!prompt) {
       return res.status(400).json({ 
@@ -1305,11 +1305,17 @@ app.get('/ai/art', async (req, res) => {
       });
     }
 
-    // Check if request wants direct image or JSON
-    const acceptHeader = req.headers.accept || '';
-    const wantsImage = acceptHeader.includes('image') || req.query.format === 'image';
+    console.log(`[AI ART] Generating art for prompt: "${prompt.substring(0, 50)}..."`);
     
     const result = await artai(prompt);
+    
+    // Check if result is valid
+    if (!result || !result.buffer || result.buffer.length < 100) {
+      throw new Error('Invalid image data received from AI service');
+    }
+    
+    // Check if request wants direct image or JSON
+    const wantsImage = format === 'image' || req.headers.accept?.includes('image');
     
     if (wantsImage) {
       // Return raw image
@@ -1331,10 +1337,27 @@ app.get('/ai/art', async (req, res) => {
     }
     
   } catch (error) {
-    console.error('AI Art API Error:', error);
-    res.status(500).json({ 
+    console.error('[AI ART] Error:', error.message);
+    
+    // Check if error is due to rate limiting or service unavailable
+    const isRateLimit = error.message.includes('rate') || error.message.includes('429') || error.message.includes('limit');
+    const isServiceError = error.message.includes('500') || error.message.includes('502') || error.message.includes('503');
+    
+    let statusCode = 500;
+    let message = "Failed to generate image: " + error.message;
+    
+    if (isRateLimit) {
+      statusCode = 429;
+      message = "AI Art service is rate limited. Please try again in a few minutes.";
+    } else if (isServiceError) {
+      statusCode = 503;
+      message = "AI Art service is temporarily unavailable. Please try again later.";
+    }
+    
+    res.status(statusCode).json({ 
       status: false, 
-      message: "Failed to generate image: " + error.message 
+      message: message,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
@@ -1442,7 +1465,7 @@ async function startServer() {
 ║  • /search/freefire                      ║
 ║  • /ai/chatgpt                           ║
 ║  • /ai/chatgpt/clear                     ║
-║  • /ai/art  ← NEW!                       ║
+║  • /ai/art  ← NEW! (FIXED)               ║
 ║                                          ║
 ║  Health: /health                         ║
 ║  Stats:   /stats                         ║
