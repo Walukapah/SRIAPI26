@@ -42,72 +42,92 @@ async function generateAIArt(prompt) {
     });
 
     if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`MagicStudio API error: ${response.status} - ${errorText}`);
+        throw new Error(`MagicStudio API error: ${response.status}`);
     }
 
-    // Get content type to determine response format
+    // Check content-type to determine response format
     const contentType = response.headers.get('content-type') || '';
-
-    // If response is JSON (error message or metadata), parse it
+    
+    // If response is JSON (contains status field), parse it
     if (contentType.includes('application/json')) {
         const jsonData = await response.json();
-        if (jsonData.error) {
-            throw new Error(jsonData.error);
-        }
-        // If JSON contains image data
-        if (jsonData.image_data || jsonData.result) {
-            const base64Data = jsonData.image_data || jsonData.result;
+        
+        // If JSON contains base64 image data
+        if (jsonData.image || jsonData.result || jsonData.data) {
+            const base64Data = jsonData.image || jsonData.result || jsonData.data;
             const buffer = Buffer.from(base64Data, 'base64');
+            const mimeType = 'image/png';
+            
             return {
                 buffer: buffer,
                 base64: base64Data,
-                mimeType: 'image/png',
-                dataUri: `data:image/png;base64,${base64Data}`
+                mimeType: mimeType,
+                dataUri: `data:${mimeType};base64,${base64Data}`,
+                prompt: prompt
             };
         }
-        throw new Error('Unexpected JSON response from API');
+        
+        // If JSON contains URL
+        if (jsonData.url || jsonData.imageUrl) {
+            const imageUrl = jsonData.url || jsonData.imageUrl;
+            // Fetch the actual image
+            const imageResponse = await fetch(imageUrl);
+            const buffer = await imageResponse.buffer();
+            const mimeType = imageResponse.headers.get('content-type') || 'image/png';
+            const base64Image = buffer.toString('base64');
+            
+            return {
+                buffer: buffer,
+                base64: base64Image,
+                mimeType: mimeType,
+                dataUri: `data:${mimeType};base64,${base64Image}`,
+                prompt: prompt
+            };
+        }
+        
+        throw new Error('Unexpected JSON response format from MagicStudio API');
     }
-
-    // If response is binary image data (normal case)
+    
+    // If response is direct image binary data (JFIF, JPEG, PNG, etc.)
     const buffer = await response.buffer();
-
-    // Detect mime type from content-type header or buffer
+    
+    // Detect MIME type from content-type header or buffer magic numbers
     let mimeType = 'image/png';
     if (contentType.includes('image/jpeg') || contentType.includes('image/jpg')) {
         mimeType = 'image/jpeg';
-    } else if (contentType.includes('image/webp')) {
-        mimeType = 'image/webp';
     } else if (contentType.includes('image/png')) {
         mimeType = 'image/png';
-    }
-
-    // Validate that we actually got image data (check magic bytes)
-    if (buffer.length < 100) {
-        throw new Error('Received empty or invalid image data');
-    }
-
-    // Check for JPEG magic bytes
-    if (buffer[0] === 0xFF && buffer[1] === 0xD8) {
-        mimeType = 'image/jpeg';
-    }
-    // Check for PNG magic bytes
-    else if (buffer[0] === 0x89 && buffer[1] === 0x50) {
-        mimeType = 'image/png';
-    }
-    // Check for WebP magic bytes
-    else if (buffer[0] === 0x52 && buffer[1] === 0x49) {
+    } else if (contentType.includes('image/webp')) {
         mimeType = 'image/webp';
+    } else if (contentType.includes('image/gif')) {
+        mimeType = 'image/gif';
+    } else {
+        // Try to detect from buffer magic numbers
+        if (buffer.length > 2) {
+            // JPEG starts with FF D8
+            if (buffer[0] === 0xFF && buffer[1] === 0xD8) {
+                mimeType = 'image/jpeg';
+            }
+            // PNG starts with 89 50 4E 47
+            else if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
+                mimeType = 'image/png';
+            }
+            // WebP starts with RIFF....WEBP
+            else if (buffer.length > 12 && buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) {
+                mimeType = 'image/webp';
+            }
+        }
     }
-
+    
     // Convert to base64 for JSON response
     const base64Image = buffer.toString('base64');
-
+    
     return {
         buffer: buffer,
         base64: base64Image,
         mimeType: mimeType,
-        dataUri: `data:${mimeType};base64,${base64Image}`
+        dataUri: `data:${mimeType};base64,${base64Image}`,
+        prompt: prompt
     };
 }
 
