@@ -258,16 +258,18 @@
         .health-check-time { font-size: 11px; color: var(--text-secondary); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
         .health-check-next { font-size: 11px; color: var(--text-secondary); margin-top: 6px; font-style: italic; }
         
+        /* Live indicator animation */
         .live-indicator { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #22c55e; margin-left: 8px; }
         .live-dot { width: 6px; height: 6px; background: #22c55e; border-radius: 50%; animation: live-pulse 1.5s ease-in-out infinite; }
         @keyframes live-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.8); } }
         .live-indicator.offline { color: var(--text-secondary); }
         .live-indicator.offline .live-dot { background: var(--text-secondary); animation: none; }
-
-        /* Image result container styles */
-        .image-result-container { margin-top: 20px; text-align: center; background: var(--bg-secondary); border-radius: 12px; padding: 20px; border: 1px solid var(--border); }
-        .image-result-container img { max-width: 100%; max-height: 500px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
-        .image-result-container .download-btn { margin-top: 16px; }
+        
+        /* Generated image display */
+        .generated-image-container { text-align: center; padding: 20px; }
+        .generated-image { max-width: 100%; max-height: 400px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+        .generated-image-info { margin-top: 16px; font-size: 12px; color: #888; }
+        .generated-image-prompt { font-style: italic; margin-bottom: 8px; }
     </style>
 </head>
 <body>
@@ -497,7 +499,8 @@
         const BACKEND_URL = window.location.origin;
 
         // ============================================
-        // API DATA - All Endpoints Configuration
+        // API DATA - Static configuration only
+        // Status is loaded from backend /health/status
         // ============================================
         const apiData = {
     download: {
@@ -532,25 +535,23 @@
                     { name: "sessionId", type: "string", required: false, description: "Optional session ID for conversation continuity (use same ID to continue conversation)", placeholder: "user123" }
                 ] 
             },
+            // AI Art Generator - Added
             { 
                 name: "AI Art Generator", 
-                path: "/ai/artai", 
+                path: "/ai/art", 
                 method: "GET", 
-                description: "Generate AI art images from text prompts using MagicStudio. Returns image directly or as base64 JSON.", 
+                description: "Generate AI art images from text prompts using MagicStudio API. Returns base64 image data that can be displayed directly.", 
                 params: [
-                    { name: "prompt", type: "string", required: true, description: "Text description of the image you want to generate", placeholder: "a dragon sitting on a castle wall" }
+                    { name: "prompt", type: "string", required: true, description: "Text description of the image you want to generate", placeholder: "a beautiful sunset over mountains, digital art" }
                 ],
-                responseType: "image",
-                testImageDisplay: true
+                responseType: "image" // Special flag for image handling
             }
         ]
     }
 };
 
+
         let currentCategory = null, currentEndpoint = null, currentResponse = null, currentTab = 'curl', sidebarSearchQuery = '', isShowingAllApis = false;
-        
-        // Store generated image URL to clear later
-        let currentGeneratedImageUrl = null;
 
         // ============================================
         // LIVE STATS SYSTEM - Real-time Updates
@@ -568,6 +569,7 @@
             }
 
             connect() {
+                // Try Server-Sent Events first
                 if (typeof EventSource !== 'undefined') {
                     this.connectSSE();
                 } else {
@@ -624,20 +626,24 @@
                 console.log('[LIVE] Starting polling fallback');
                 this.updateLiveIndicator(false);
                 
+                // Clear existing polling
                 if (this.pollingInterval) {
                     clearInterval(this.pollingInterval);
                 }
                 
+                // Poll every 5 seconds
                 this.pollingInterval = setInterval(() => {
                     this.fetchStats();
                 }, 5000);
                 
+                // Initial fetch
                 this.fetchStats();
             }
 
             handleUpdate(data) {
                 if (!data || typeof data.apiCalls === 'undefined') return;
                 
+                // Check if values actually changed
                 const hasChanged = !this.lastStats || 
                     this.lastStats.apiCalls !== data.apiCalls || 
                     this.lastStats.totalVisitors !== data.totalVisitors;
@@ -687,6 +693,8 @@
                 const animate = (currentTime) => {
                     const elapsed = currentTime - start;
                     const progress = Math.min(elapsed / duration, 1);
+                    
+                    // Easing function - easeOutQuart
                     const easeOutQuart = 1 - Math.pow(1 - progress, 4);
                     const current = Math.floor(from + (to - from) * easeOutQuart);
                     
@@ -760,7 +768,7 @@
         const liveStats = new LiveStatsManager();
 
         // ============================================
-        // VISITOR TRACKING - ON PAGE LOAD
+        // VISITOR TRACKING - ON PAGE LOAD (Not on API test)
         // ============================================
 
         const VISITOR_CONFIG = {
@@ -771,23 +779,28 @@
         let visitorTracked = false;
 
         async function trackVisitorOnPageLoad() {
+            // Prevent double tracking
             if (visitorTracked) {
                 console.log('[VISITOR] Already tracked this session');
                 return;
             }
 
             try {
+                // Generate or get persistent visitor ID
                 let visitorId = localStorage.getItem(VISITOR_CONFIG.visitorIdKey);
                 if (!visitorId) {
                     visitorId = generateVisitorId();
                     localStorage.setItem(VISITOR_CONFIG.visitorIdKey, visitorId);
                 }
 
+                // Check if we should count this visit (cooldown: 1 hour)
                 const lastVisit = localStorage.getItem(VISITOR_CONFIG.lastVisitKey);
                 const now = Date.now();
                 const oneHour = 60 * 60 * 1000;
                 
+                // Only count if last visit was more than 1 hour ago
                 if (!lastVisit || (now - parseInt(lastVisit)) > oneHour) {
+                    // Send to backend - ON PAGE LOAD
                     const response = await fetch(`${BACKEND_URL}/stats/visitor`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -796,7 +809,7 @@
                             fingerprint: generateBrowserFingerprint(),
                             timestamp: new Date().toISOString(),
                             userAgent: navigator.userAgent,
-                            source: 'page_load'
+                            source: 'page_load' // Mark as coming from page load
                         })
                     });
 
@@ -807,6 +820,7 @@
                         visitorTracked = true;
                         console.log('[VISITOR] Tracked on page load:', result.isNewVisitor ? 'NEW' : 'RETURNING');
                         
+                        // Update display immediately with server data
                         if (result.stats) {
                             updateStatsDisplay(result.stats);
                         }
@@ -872,17 +886,22 @@
                 
                 const healthData = await response.json();
                 
+                // Update health check panel with proper time display
                 updateHealthCheckPanel(healthData);
                 
+                // Update endpoint statuses in apiData
                 if (healthData.endpoints) {
                     Object.keys(apiData).forEach(categoryKey => {
                         apiData[categoryKey].endpoints.forEach(endpoint => {
+                            // Find matching endpoint in health data
                             let healthEndpoint = null;
                             
+                            // Check by path first
                             healthEndpoint = Object.values(healthData.endpoints).find(
                                 he => he.path === endpoint.path
                             );
                             
+                            // If not found by path, check by name
                             if (!healthEndpoint) {
                                 healthEndpoint = Object.values(healthData.endpoints).find(
                                     he => he.name === endpoint.name
@@ -898,12 +917,14 @@
                     });
                 }
                 
+                // Re-render sidebar with updated statuses
                 renderSidebar();
                 
                 console.log('[HEALTH] Loaded from backend:', healthData.summary);
                 
             } catch (e) {
                 console.log('[HEALTH] Failed to load from backend:', e.message);
+                // If backend fails, show all as checking (not offline)
                 Object.keys(apiData).forEach(categoryKey => {
                     apiData[categoryKey].endpoints.forEach(endpoint => {
                         endpoint.status = 'checking';
@@ -936,6 +957,7 @@
             
             statusEl.innerHTML = `<span class="status-indicator ${statusClass}"></span><span>${message}</span>`;
             
+            // Handle last check time display
             if (healthData && healthData.lastCheckTime && healthData.lastCheckTime !== '--') {
                 timeEl.textContent = `Last checked: ${healthData.lastCheckTime}`;
             } else if (healthData && healthData.lastCheckDate) {
@@ -944,6 +966,7 @@
                 timeEl.textContent = 'Last checked: Never';
             }
             
+            // Handle next check time display
             if (healthData && healthData.nextCheckTime && healthData.nextCheckTime !== '--') {
                 nextEl.textContent = `Next check: ${healthData.nextCheckTime}`;
             } else {
@@ -1196,9 +1219,6 @@
         }
 
         function showEndpointDetail(category, index) {
-            // Clear any previously generated image when navigating to a new endpoint
-            clearGeneratedImage();
-            
             currentCategory = category;
             currentEndpoint = apiData[category].endpoints[index];
             currentResponse = null;
@@ -1225,21 +1245,7 @@
             window.scrollTo(0, 0);
         }
 
-        // Function to clear generated image
-        function clearGeneratedImage() {
-            const existingImageContainer = document.getElementById('imageResultContainer');
-            if (existingImageContainer) {
-                existingImageContainer.remove();
-            }
-            if (currentGeneratedImageUrl) {
-                URL.revokeObjectURL(currentGeneratedImageUrl);
-                currentGeneratedImageUrl = null;
-            }
-        }
-
         function goBackFromDetail() {
-            // Clear image when going back
-            clearGeneratedImage();
             isShowingAllApis ? showAllApis() : currentCategory ? showApiList(currentCategory) : showHome();
         }
 
@@ -1285,15 +1291,12 @@
             const responseTime = document.getElementById('responseTime');
             const testBtnText = document.getElementById('testBtnText');
             
-            // Clear previous image before testing
-            clearGeneratedImage();
-            
             responseSection.classList.add('active');
             responseStatus.className = 'response-status status-loading';
             responseStatus.innerHTML = '<span class="loading"></span> Sending Request...';
-            responseContent.textContent = 'Waiting for response...';
+            responseContent.innerHTML = 'Waiting for response...';
             responseTime.textContent = '';
-            testBtnText.textContent = 'Sending...';
+            testBtnText.textContent = 'Generating...';
             
             const startTime = performance.now();
             
@@ -1301,97 +1304,48 @@
                 const url = buildRequestUrl();
                 
                 // Check if this is an image endpoint
-                if (currentEndpoint.responseType === 'image' || currentEndpoint.path.includes('artai')) {
-                    // For image endpoints, fetch as blob and display
-                    const response = await fetch(url, { 
-                        method: 'GET',
-                        headers: { 'Accept': 'image/jpeg,image/png,image/*,application/json' }
-                    });
+                const isImageEndpoint = currentEndpoint.responseType === 'image';
+                
+                const response = await fetch(url, { 
+                    method: 'GET', 
+                    headers: { 
+                        'Accept': isImageEndpoint ? 'application/json' : 'application/json'
+                    } 
+                });
+                
+                const endTime = performance.now();
+                const duration = (endTime - startTime).toFixed(0);
+                
+                if (isImageEndpoint) {
+                    // Handle AI Art response with image
+                    const data = await response.json();
+                    currentResponse = data;
                     
-                    const endTime = performance.now();
-                    const duration = (endTime - startTime).toFixed(0);
-                    const contentType = response.headers.get('Content-Type');
-                    
-                    if (contentType && contentType.includes('image')) {
-                        // Handle direct image response
-                        const blob = await response.blob();
-                        const imageUrl = URL.createObjectURL(blob);
-                        currentGeneratedImageUrl = imageUrl; // Store for cleanup
-                        
+                    if (response.ok && data.status === true && data.result && data.result.imageUrl) {
                         responseStatus.className = 'response-status status-success';
-                        responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Success - Image Generated (${response.status})`;
-                        responseTime.textContent = `${duration}ms`;
+                        responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Success (${response.status})`;
                         
-                        // Create image display container
-                        const imageContainer = document.createElement('div');
-                        imageContainer.id = 'imageResultContainer';
-                        imageContainer.className = 'image-result-container';
-                        
-                        const img = document.createElement('img');
-                        img.src = imageUrl;
-                        img.alt = 'Generated AI Art';
-                        
-                        const downloadBtn = document.createElement('button');
-                        downloadBtn.className = 'btn btn-primary download-btn';
-                        downloadBtn.innerHTML = `
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="7 10 12 15 17 10"></polyline>
-                                <line x1="12" y1="15" x2="12" y2="3"></line>
-                            </svg>
-                            Download Image
+                        // Display image in response
+                        responseContent.innerHTML = `
+                            <div style="text-align: center; padding: 20px;">
+                                <img src="${data.result.imageUrl}" 
+                                     alt="Generated AI Art" 
+                                     style="max-width: 100%; max-height: 400px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);"
+                                     onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                                <div style="display: none; color: #ff7b72; padding: 20px;">Failed to load image</div>
+                                <div style="margin-top: 16px; font-size: 12px; color: #888;">
+                                    Prompt: ${escapeHtml(data.result.prompt || currentEndpoint.params[0].placeholder)}<br>
+                                    Size: ${(data.result.size / 1024).toFixed(2)} KB | Type: ${data.result.mimeType}
+                                </div>
+                            </div>
                         `;
-                        downloadBtn.onclick = () => {
-                            const a = document.createElement('a');
-                            a.href = imageUrl;
-                            a.download = `ai-art-${Date.now()}.jpg`;
-                            a.click();
-                        };
-                        
-                        imageContainer.appendChild(img);
-                        imageContainer.appendChild(document.createElement('br'));
-                        imageContainer.appendChild(downloadBtn);
-                        
-                        // Insert after response section
-                        responseSection.parentNode.insertBefore(imageContainer, responseSection.nextSibling);
-                        
-                        // Updated response content with status: true for health check compatibility
-                        const jsonResponse = {
-                            status: true,
-                            creator: "WALUKA🇱🇰",
-                            message: "Image generated successfully",
-                            size: `${(blob.size / 1024).toFixed(2)} KB`,
-                            type: blob.type,
-                            note: "The image is displayed above"
-                        };
-                        currentResponse = jsonResponse;
-                        responseContent.innerHTML = syntaxHighlight(JSON.stringify(jsonResponse, null, 2));
-                        
                     } else {
-                        // Handle JSON error response
-                        const data = await response.json();
-                        currentResponse = data;
-                        
-                        if (response.ok && data.status !== false) {
-                            responseStatus.className = 'response-status status-success';
-                            responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Success (${response.status})`;
-                        } else {
-                            responseStatus.className = 'response-status status-error';
-                            responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Error (${response.status})`;
-                        }
-                        responseTime.textContent = `${duration}ms`;
+                        responseStatus.className = 'response-status status-error';
+                        responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Error`;
                         responseContent.innerHTML = syntaxHighlight(JSON.stringify(data, null, 2));
                     }
-                    
                 } else {
-                    // Regular JSON endpoint handling
-                    const response = await fetch(url, { 
-                        method: 'GET', 
-                        headers: { 'Accept': 'application/json' } 
-                    });
-                    
-                    const endTime = performance.now();
-                    const duration = (endTime - startTime).toFixed(0);
+                    // Handle regular JSON response
                     const data = await response.json();
                     currentResponse = data;
                     
@@ -1402,9 +1356,11 @@
                         responseStatus.className = 'response-status status-error';
                         responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Error (${response.status})`;
                     }
-                    responseTime.textContent = `${duration}ms`;
+                    
                     responseContent.innerHTML = syntaxHighlight(JSON.stringify(data, null, 2));
                 }
+                
+                responseTime.textContent = `${duration}ms`;
                 
             } catch (error) {
                 responseStatus.className = 'response-status status-error';
@@ -1453,23 +1409,23 @@
 
         function updateCodeExamples() {
             const url = buildRequestUrl();
-            const isImageEndpoint = currentEndpoint.responseType === 'image' || currentEndpoint.path.includes('artai');
+            const isImageEndpoint = currentEndpoint.responseType === 'image';
             
             let examples;
             
             if (isImageEndpoint) {
-                // AI Art Generator code examples with proper image handling
+                // Special examples for image endpoint
                 examples = {
-                    curl: `# Download image directly\ncurl -X GET "${url}" \\\n  -H "Accept: image/jpeg,image/png" \\\n  --output "ai-art-${Date.now()}.jpg"\n\n# Or get as JSON (base64)\ncurl -X GET "${url}/json" \\\n  -H "Accept: application/json"`,
+                    curl: `curl -X GET "${url}" \\\n  -H "Accept: application/json" \\\n  --output response.json\n\n# Then extract and decode base64 image:\n# cat response.json | jq -r '.result.imageUrl' | cut -d',' -f2 | base64 -d > image.png`,
                     
-                    node: `const fs = require('fs');\nconst https = require('https');\n\nconst url = '${url}';\n\n// Download image directly\nhttps.get(url, { headers: { 'Accept': 'image/jpeg' } }, (response) => {\n  if (response.headers['content-type'].includes('image')) {\n    const filename = 'ai-art-${Date.now()}.jpg';\n    const fileStream = fs.createWriteStream(filename);\n    response.pipe(fileStream);\n    fileStream.on('finish', () => {\n      console.log('Image saved:', filename);\n    });\n  } else {\n    // Handle JSON response\n    let data = '';\n    response.on('data', chunk => data += chunk);\n    response.on('end', () => {\n      const json = JSON.parse(data);\n      console.log(json);\n      // If base64 image: Buffer.from(json.result.image.split(',')[1], 'base64')\n    });\n  }\n}).on('error', (err) => {\n  console.error('Error:', err.message);\n});`,
+                    node: `const axios = require('axios');\nconst fs = require('fs');\n\nconst url = '${url}';\n\naxios.get(url)\n  .then(response => {\n    const data = response.data;\n    if (data.status && data.result.imageUrl) {\n      // Extract base64 data\n      const base64Data = data.result.imageUrl.split(',')[1];\n      fs.writeFileSync('generated-art.png', base64Data, 'base64');\n      console.log('Image saved as generated-art.png');\n    }\n  })\n  .catch(error => {\n    console.error(error);\n  });`,
                     
-                    python: `import requests\n\nurl = "${url}"\n\n# Download image directly\nresponse = requests.get(url, headers={'Accept': 'image/jpeg'})\n\nif response.headers.get('Content-Type', '').startswith('image'):\n    # Save image\n    filename = f"ai-art-${Date.now()}.jpg"\n    with open(filename, 'wb') as f:\n        f.write(response.content)\n    print(f"Image saved: {filename}")\nelse:\n    # Handle JSON response\n    data = response.json()\n    print(data)\n    # If base64 image:\n    # import base64\n    # image_data = base64.b64decode(data['result']['image'].split(',')[1])\n    # with open('image.jpg', 'wb') as f:\n    #     f.write(image_data)`,
+                    python: `import requests\nimport base64\n\nurl = "${url}"\n\nresponse = requests.get(url)\ndata = response.json()\n\nif data.get('status') and data['result'].get('imageUrl'):\n    # Extract base64 data from data URI\n    base64_data = data['result']['imageUrl'].split(',')[1]\n    image_data = base64.b64decode(base64_data)\n    \n    with open('generated-art.png', 'wb') as f:\n        f.write(image_data)\n    print('Image saved as generated-art.png')`,
                     
-                    php: `<?php\n\n$url = '${url}';\n\n$ch = curl_init($url);\ncurl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\ncurl_setopt($ch, CURLOPT_HTTPHEADER, ['Accept: image/jpeg']);\n$response = curl_exec($ch);\n$contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);\ncurl_close($ch);\n\nif (strpos($contentType, 'image') !== false) {\n    // Save image\n    $filename = 'ai-art-' . time() . '.jpg';\n    file_put_contents($filename, $response);\n    echo "Image saved: $filename";\n} else {\n    // Handle JSON response\n    $data = json_decode($response, true);\n    print_r($data);\n    // If base64 image:\n    // $imageData = base64_decode(explode(',', $data['result']['image'])[1]);\n    // file_put_contents('image.jpg', $imageData);\n}`
+                    php: `<?php\n\n$url = '${url}';\n\n$response = file_get_contents($url);\n$data = json_decode($response, true);\n\nif ($data['status'] && isset($data['result']['imageUrl'])) {\n    // Extract base64 data\n    $base64Data = explode(',', $data['result']['imageUrl'])[1];\n    $imageData = base64_decode($base64Data);\n    \n    file_put_contents('generated-art.png', $imageData);\n    echo 'Image saved as generated-art.png';\n}`
                 };
             } else {
-                // Regular JSON endpoints
+                // Regular examples
                 examples = {
                     curl: `curl -X GET "${url}" \\\n  -H "Accept: application/json"`,
                     node: `const axios = require('axios');\n\nconst url = '${url}';\n\naxios.get(url)\n  .then(response => {\n    console.log(response.data);\n  })\n  .catch(error => {\n    console.error(error);\n  });`,
@@ -1527,12 +1483,16 @@
             setupKeyboardShortcuts();
             setupHomeSearch();
             
+            // 1. Track visitor on PAGE LOAD (not on API test)
             trackVisitorOnPageLoad();
             
+            // 2. Start live stats updates
             liveStats.connect();
             
+            // 3. Load health status
             loadHealthStatusFromBackend();
             
+            // 4. Handle page visibility change (reconnect when visible)
             document.addEventListener('visibilitychange', () => {
                 if (!document.hidden && !liveStats.isConnected) {
                     liveStats.connect();
@@ -1540,12 +1500,9 @@
             });
         });
 
+        // Cleanup on page unload
         window.addEventListener('beforeunload', () => {
             liveStats.disconnect();
-            // Clean up any generated image URLs
-            if (currentGeneratedImageUrl) {
-                URL.revokeObjectURL(currentGeneratedImageUrl);
-            }
         });
     </script>
 </body>
