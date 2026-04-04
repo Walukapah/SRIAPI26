@@ -9,6 +9,10 @@ function generateUUID() {
 }
 
 async function generateAIArt(prompt) {
+    if (!prompt) {
+        throw new Error('Prompt is required');
+    }
+
     const formData = new FormData();
     formData.append('prompt', prompt);
     formData.append('output_format', 'bytes');
@@ -41,7 +45,19 @@ async function generateAIArt(prompt) {
         throw new Error(`MagicStudio API error: ${response.status}`);
     }
 
-    return await response.buffer();
+    // Return buffer for image data
+    const buffer = await response.buffer();
+    
+    // Convert to base64 for JSON response
+    const base64Image = buffer.toString('base64');
+    const mimeType = response.headers.get('content-type') || 'image/png';
+    
+    return {
+        buffer: buffer,
+        base64: base64Image,
+        mimeType: mimeType,
+        dataUri: `data:${mimeType};base64,${base64Image}`
+    };
 }
 
 module.exports = generateAIArt;
