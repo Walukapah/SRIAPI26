@@ -264,12 +264,6 @@
         @keyframes live-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.8); } }
         .live-indicator.offline { color: var(--text-secondary); }
         .live-indicator.offline .live-dot { background: var(--text-secondary); animation: none; }
-        
-        /* Generated image display */
-        .generated-image-container { text-align: center; padding: 20px; }
-        .generated-image { max-width: 100%; max-height: 400px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
-        .generated-image-info { margin-top: 16px; font-size: 12px; color: #888; }
-        .generated-image-prompt { font-style: italic; margin-bottom: 8px; }
     </style>
 </head>
 <body>
@@ -499,8 +493,7 @@
         const BACKEND_URL = window.location.origin;
 
         // ============================================
-        // API DATA - Static configuration only
-        // Status is loaded from backend /health/status
+        // API DATA - Added AI Art Generator
         // ============================================
         const apiData = {
     download: {
@@ -535,16 +528,15 @@
                     { name: "sessionId", type: "string", required: false, description: "Optional session ID for conversation continuity (use same ID to continue conversation)", placeholder: "user123" }
                 ] 
             },
-            // AI Art Generator - Added
             { 
                 name: "AI Art Generator", 
-                path: "/ai/art", 
+                path: "/ai/aiart", 
                 method: "GET", 
-                description: "Generate AI art images from text prompts using MagicStudio API. Returns base64 image data that can be displayed directly.", 
+                description: "Generate AI art images using MagicStudio. Creates beautiful images from text prompts with high quality rendering.", 
                 params: [
-                    { name: "prompt", type: "string", required: true, description: "Text description of the image you want to generate", placeholder: "a beautiful sunset over mountains, digital art" }
-                ],
-                responseType: "image" // Special flag for image handling
+                    { name: "prompt", type: "string", required: true, description: "Text description of the image you want to generate", placeholder: "a dragon sitting on castle wall at sunset" },
+                    { name: "format", type: "string", required: false, description: "Response format: 'image' for direct image, 'json' for base64 JSON", placeholder: "json" }
+                ] 
             }
         ]
     }
@@ -569,7 +561,6 @@
             }
 
             connect() {
-                // Try Server-Sent Events first
                 if (typeof EventSource !== 'undefined') {
                     this.connectSSE();
                 } else {
@@ -626,24 +617,20 @@
                 console.log('[LIVE] Starting polling fallback');
                 this.updateLiveIndicator(false);
                 
-                // Clear existing polling
                 if (this.pollingInterval) {
                     clearInterval(this.pollingInterval);
                 }
                 
-                // Poll every 5 seconds
                 this.pollingInterval = setInterval(() => {
                     this.fetchStats();
                 }, 5000);
                 
-                // Initial fetch
                 this.fetchStats();
             }
 
             handleUpdate(data) {
                 if (!data || typeof data.apiCalls === 'undefined') return;
                 
-                // Check if values actually changed
                 const hasChanged = !this.lastStats || 
                     this.lastStats.apiCalls !== data.apiCalls || 
                     this.lastStats.totalVisitors !== data.totalVisitors;
@@ -694,7 +681,6 @@
                     const elapsed = currentTime - start;
                     const progress = Math.min(elapsed / duration, 1);
                     
-                    // Easing function - easeOutQuart
                     const easeOutQuart = 1 - Math.pow(1 - progress, 4);
                     const current = Math.floor(from + (to - from) * easeOutQuart);
                     
@@ -768,7 +754,7 @@
         const liveStats = new LiveStatsManager();
 
         // ============================================
-        // VISITOR TRACKING - ON PAGE LOAD (Not on API test)
+        // VISITOR TRACKING - ON PAGE LOAD
         // ============================================
 
         const VISITOR_CONFIG = {
@@ -779,28 +765,23 @@
         let visitorTracked = false;
 
         async function trackVisitorOnPageLoad() {
-            // Prevent double tracking
             if (visitorTracked) {
                 console.log('[VISITOR] Already tracked this session');
                 return;
             }
 
             try {
-                // Generate or get persistent visitor ID
                 let visitorId = localStorage.getItem(VISITOR_CONFIG.visitorIdKey);
                 if (!visitorId) {
                     visitorId = generateVisitorId();
                     localStorage.setItem(VISITOR_CONFIG.visitorIdKey, visitorId);
                 }
 
-                // Check if we should count this visit (cooldown: 1 hour)
                 const lastVisit = localStorage.getItem(VISITOR_CONFIG.lastVisitKey);
                 const now = Date.now();
                 const oneHour = 60 * 60 * 1000;
                 
-                // Only count if last visit was more than 1 hour ago
                 if (!lastVisit || (now - parseInt(lastVisit)) > oneHour) {
-                    // Send to backend - ON PAGE LOAD
                     const response = await fetch(`${BACKEND_URL}/stats/visitor`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -809,7 +790,7 @@
                             fingerprint: generateBrowserFingerprint(),
                             timestamp: new Date().toISOString(),
                             userAgent: navigator.userAgent,
-                            source: 'page_load' // Mark as coming from page load
+                            source: 'page_load'
                         })
                     });
 
@@ -820,7 +801,6 @@
                         visitorTracked = true;
                         console.log('[VISITOR] Tracked on page load:', result.isNewVisitor ? 'NEW' : 'RETURNING');
                         
-                        // Update display immediately with server data
                         if (result.stats) {
                             updateStatsDisplay(result.stats);
                         }
@@ -841,7 +821,7 @@
             return 'v_' + Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('').substring(0, 16);
         }
 
-        function generateBrowserFingerprint() {
+                function generateBrowserFingerprint() {
             const components = [
                 navigator.userAgent,
                 navigator.language,
@@ -1285,82 +1265,97 @@
         }
 
         async function testEndpoint() {
+            // Special handling for AI Art endpoint (image display)
+            const format = document.getElementById('input-format') ? document.getElementById('input-format').value : '';
+            
+            if (currentEndpoint.path === '/ai/aiart' && format !== 'json') {
+                const responseSection = document.getElementById('responseSection');
+                const responseContent = document.getElementById('responseContent');
+                const responseStatus = document.getElementById('responseStatus');
+                const responseTime = document.getElementById('responseTime');
+                const testBtnText = document.getElementById('testBtnText');
+                
+                responseSection.classList.add('active');
+                responseStatus.className = 'response-status status-loading';
+                responseStatus.innerHTML = '<span class="loading"></span> Generating Image...';
+                responseContent.innerHTML = '<p style="color: #666; text-align: center; padding: 40px;">Generating AI art, please wait...<br>This may take 10-30 seconds</p>';
+                
+                const startTime = performance.now();
+                
+                try {
+                    const url = buildRequestUrl();
+                    const response = await fetch(url);
+                    const endTime = performance.now();
+                    const duration = (endTime - startTime).toFixed(0);
+                    
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        const imageUrl = URL.createObjectURL(blob);
+                        
+                        responseStatus.className = 'response-status status-success';
+                        responseStatus.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Image Generated (200)';
+                        responseTime.textContent = `${duration}ms`;
+                        
+                        // Display the image
+                        responseContent.innerHTML = `
+                            <div style="text-align: center; padding: 20px;">
+                                <img src="${imageUrl}" style="max-width: 100%; max-height: 500px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);" />
+                                <p style="margin-top: 16px; color: #666; font-size: 13px; font-family: JetBrains Mono, monospace;">Prompt: ${document.getElementById('input-prompt').value}</p>
+                                <button class="btn btn-primary" style="margin-top: 12px;" onclick="downloadGeneratedImage('${imageUrl}')">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                        <polyline points="7 10 12 15 17 10"></polyline>
+                                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                                    </svg>
+                                    Download Image
+                                </button>
+                            </div>
+                        `;
+                        
+                        currentResponse = { imageUrl: imageUrl, type: 'image', prompt: document.getElementById('input-prompt').value };
+                    } else {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                } catch (error) {
+                    responseStatus.className = 'response-status status-error';
+                    responseStatus.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Error';
+                    responseContent.innerHTML = `<div style="color: #ef4444; padding: 20px;">Error: ${error.message}<br><br>Make sure the prompt is valid and try again.</div>`;
+                }
+                
+                testBtnText.textContent = 'Send Request';
+                return;
+            }
+
+            // Original testEndpoint code continues...
             const responseSection = document.getElementById('responseSection');
             const responseStatus = document.getElementById('responseStatus');
             const responseContent = document.getElementById('responseContent');
             const responseTime = document.getElementById('responseTime');
             const testBtnText = document.getElementById('testBtnText');
-            
             responseSection.classList.add('active');
             responseStatus.className = 'response-status status-loading';
             responseStatus.innerHTML = '<span class="loading"></span> Sending Request...';
-            responseContent.innerHTML = 'Waiting for response...';
+            responseContent.textContent = 'Waiting for response...';
             responseTime.textContent = '';
-            testBtnText.textContent = 'Generating...';
+            testBtnText.textContent = 'Sending...';
             
             const startTime = performance.now();
-            
             try {
                 const url = buildRequestUrl();
-                
-                // Check if this is an image endpoint
-                const isImageEndpoint = currentEndpoint.responseType === 'image';
-                
-                const response = await fetch(url, { 
-                    method: 'GET', 
-                    headers: { 
-                        'Accept': isImageEndpoint ? 'application/json' : 'application/json'
-                    } 
-                });
-                
+                const response = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
                 const endTime = performance.now();
                 const duration = (endTime - startTime).toFixed(0);
-                
-                if (isImageEndpoint) {
-                    // Handle AI Art response with image
-                    const data = await response.json();
-                    currentResponse = data;
-                    
-                    if (response.ok && data.status === true && data.result && data.result.imageUrl) {
-                        responseStatus.className = 'response-status status-success';
-                        responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Success (${response.status})`;
-                        
-                        // Display image in response
-                        responseContent.innerHTML = `
-                            <div style="text-align: center; padding: 20px;">
-                                <img src="${data.result.imageUrl}" 
-                                     alt="Generated AI Art" 
-                                     style="max-width: 100%; max-height: 400px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);"
-                                     onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-                                <div style="display: none; color: #ff7b72; padding: 20px;">Failed to load image</div>
-                                <div style="margin-top: 16px; font-size: 12px; color: #888;">
-                                    Prompt: ${escapeHtml(data.result.prompt || currentEndpoint.params[0].placeholder)}<br>
-                                    Size: ${(data.result.size / 1024).toFixed(2)} KB | Type: ${data.result.mimeType}
-                                </div>
-                            </div>
-                        `;
-                    } else {
-                        responseStatus.className = 'response-status status-error';
-                        responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Error`;
-                        responseContent.innerHTML = syntaxHighlight(JSON.stringify(data, null, 2));
-                    }
+                const data = await response.json();
+                currentResponse = data;
+                if (response.ok && data.status !== false) {
+                    responseStatus.className = 'response-status status-success';
+                    responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Success (${response.status})`;
                 } else {
-                    // Handle regular JSON response
-                    const data = await response.json();
-                    currentResponse = data;
-                    
-                    if (response.ok && data.status !== false) {
-                        responseStatus.className = 'response-status status-success';
-                        responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Success (${response.status})`;
-                    } else {
-                        responseStatus.className = 'response-status status-error';
-                        responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Error (${response.status})`;
-                    }
-                    
-                    responseContent.innerHTML = syntaxHighlight(JSON.stringify(data, null, 2));
+                    responseStatus.className = 'response-status status-error';
+                    responseStatus.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Error (${response.status})`;
                 }
-                
                 responseTime.textContent = `${duration}ms`;
+                responseContent.innerHTML = syntaxHighlight(JSON.stringify(data, null, 2));
                 
             } catch (error) {
                 responseStatus.className = 'response-status status-error';
@@ -1383,6 +1378,16 @@
             });
         }
 
+        function downloadGeneratedImage(imageUrl) {
+            const a = document.createElement('a');
+            a.href = imageUrl;
+            a.download = `ai-art-${Date.now()}.jpg`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            showToast('Image downloaded!');
+        }
+
         function copyResponse() {
             if (!currentResponse) return;
             navigator.clipboard.writeText(JSON.stringify(currentResponse, null, 2)).then(() => showToast('Response copied!'));
@@ -1390,6 +1395,13 @@
 
         function downloadResponse() {
             if (!currentResponse) return;
+            
+            // Handle image download
+            if (currentResponse.type === 'image' && currentResponse.imageUrl) {
+                downloadGeneratedImage(currentResponse.imageUrl);
+                return;
+            }
+            
             const json = JSON.stringify(currentResponse, null, 2);
             const blob = new Blob([json], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -1409,31 +1421,12 @@
 
         function updateCodeExamples() {
             const url = buildRequestUrl();
-            const isImageEndpoint = currentEndpoint.responseType === 'image';
-            
-            let examples;
-            
-            if (isImageEndpoint) {
-                // Special examples for image endpoint
-                examples = {
-                    curl: `curl -X GET "${url}" \\\n  -H "Accept: application/json" \\\n  --output response.json\n\n# Then extract and decode base64 image:\n# cat response.json | jq -r '.result.imageUrl' | cut -d',' -f2 | base64 -d > image.png`,
-                    
-                    node: `const axios = require('axios');\nconst fs = require('fs');\n\nconst url = '${url}';\n\naxios.get(url)\n  .then(response => {\n    const data = response.data;\n    if (data.status && data.result.imageUrl) {\n      // Extract base64 data\n      const base64Data = data.result.imageUrl.split(',')[1];\n      fs.writeFileSync('generated-art.png', base64Data, 'base64');\n      console.log('Image saved as generated-art.png');\n    }\n  })\n  .catch(error => {\n    console.error(error);\n  });`,
-                    
-                    python: `import requests\nimport base64\n\nurl = "${url}"\n\nresponse = requests.get(url)\ndata = response.json()\n\nif data.get('status') and data['result'].get('imageUrl'):\n    # Extract base64 data from data URI\n    base64_data = data['result']['imageUrl'].split(',')[1]\n    image_data = base64.b64decode(base64_data)\n    \n    with open('generated-art.png', 'wb') as f:\n        f.write(image_data)\n    print('Image saved as generated-art.png')`,
-                    
-                    php: `<?php\n\n$url = '${url}';\n\n$response = file_get_contents($url);\n$data = json_decode($response, true);\n\nif ($data['status'] && isset($data['result']['imageUrl'])) {\n    // Extract base64 data\n    $base64Data = explode(',', $data['result']['imageUrl'])[1];\n    $imageData = base64_decode($base64Data);\n    \n    file_put_contents('generated-art.png', $imageData);\n    echo 'Image saved as generated-art.png';\n}`
-                };
-            } else {
-                // Regular examples
-                examples = {
-                    curl: `curl -X GET "${url}" \\\n  -H "Accept: application/json"`,
-                    node: `const axios = require('axios');\n\nconst url = '${url}';\n\naxios.get(url)\n  .then(response => {\n    console.log(response.data);\n  })\n  .catch(error => {\n    console.error(error);\n  });`,
-                    python: `import requests\n\nurl = "${url}"\n\nresponse = requests.get(url)\ndata = response.json()\n\nprint(data)`,
-                    php: `<?php\n\n$url = '${url}';\n\n$ch = curl_init($url);\ncurl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n$response = curl_exec($ch);\ncurl_close($ch);\n\n$data = json_decode($response, true);\nprint_r($data);`
-                };
-            }
-            
+            const examples = {
+                curl: `curl -X GET "${url}" \\\n  -H "Accept: application/json"`,
+                node: `const axios = require('axios');\n\nconst url = '${url}';\n\naxios.get(url)\n  .then(response => {\n    console.log(response.data);\n  })\n  .catch(error => {\n    console.error(error);\n  });`,
+                python: `import requests\n\nurl = "${url}"\n\nresponse = requests.get(url)\ndata = response.json()\n\nprint(data)`,
+                php: `<?php\n\n$url = '${url}';\n\n$ch = curl_init($url);\ncurl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n$response = curl_exec($ch);\ncurl_close($ch);\n\n$data = json_decode($response, true);\nprint_r($data);`
+            };
             const code = examples[currentTab] || examples.curl;
             document.getElementById('codeContent').innerHTML = code.split('\n').map((line, i) => `<div class="code-line"><span class="line-number">${i + 1}</span><span>${escapeHtml(line)}</span></div>`).join('');
         }
