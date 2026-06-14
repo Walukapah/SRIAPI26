@@ -1,4 +1,4 @@
-// api/chatgptai.js - ChatGPT AI Chat API (Fixed SSE Support)
+// api/chatgptai.js - ChatGPT AI Chat API (Fixed - No Infinite Loop)
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 
@@ -29,52 +29,22 @@ class TalkAIChat {
             'X-Requested-With': 'XMLHttpRequest'
         };
 
-        // Session cookies - will be updated dynamically
+        // Session cookies
         this.cookies = {
             '_csrf-front': '9a6a7e474d538b963de0a21b79f12f96b87a3dacbc0f0b96ce591503bd82d0bda%3A2%3A%7Bi%3A0%3Bs%3A11%3A%22_csrf-front%22%3Bi%3A1%3Bs%3A32%3A%22ORCOPS08hHsSCJ3U_g4BasMGOaeqw-bS%22%3B%7D',
             'talkai-front': '4p9qa90qet46a52ore1l4k58h9'
         };
+
+        this.retryCount = 0;
+        this.maxRetries = 1;
     }
 
     generateId() {
         return uuidv4();
     }
 
-    // Get fresh cookies from talkai.info
-    async getFreshCookies() {
-        try {
-            const response = await axios.get('https://talkai.info/chat/', {
-                headers: {
-                    'User-Agent': this.headers['User-Agent'],
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                },
-                timeout: 10000,
-                maxRedirects: 5
-            });
-
-            const setCookie = response.headers['set-cookie'];
-            if (setCookie && Array.isArray(setCookie)) {
-                setCookie.forEach(cookie => {
-                    const match = cookie.match(/^([^=]+)=([^;]+)/);
-                    if (match) {
-                        this.cookies[match[1]] = match[2];
-                    }
-                });
-            }
-
-            // Try to get CSRF token from HTML
-            const html = response.data;
-            const csrfMatch = html.match(/name="_csrf-front" value="([^"]+)"/);
-            if (csrfMatch) {
-                this.cookies['_csrf-front'] = csrfMatch[1];
-            }
-
-            return true;
-        } catch (error) {
-            console.log('[ChatGPT] Failed to get fresh cookies:', error.message);
-            return false;
-        }
+    getCookieString() {
+        return Object.entries(this.cookies).map(([k, v]) => `${k}=${v}`).join('; ');
     }
 
     async sendMessage(message) {
@@ -87,7 +57,7 @@ class TalkAIChat {
         };
         this.messagesHistory.push(userMsg);
 
-        // Prepare payload (matching the screenshot exactly)
+        // Prepare payload
         const payload = {
             messagesHistory: this.messagesHistory,
             settings: this.settings,
@@ -98,7 +68,7 @@ class TalkAIChat {
             const response = await axios.post(this.baseURL, payload, {
                 headers: {
                     ...this.headers,
-                    'Cookie': Object.entries(this.cookies).map(([k, v]) => `${k}=${v}`).join('; ')
+                    'Cookie': this.getCookieString()
                 },
                 timeout: 60000,
                 responseType: 'text'
@@ -126,11 +96,10 @@ class TalkAIChat {
                     // Skip empty data
                     if (!dataContent) continue;
 
-                    // Skip event metadata (botmodel, trylimit, etc.)
-                    // Only process actual content data
-                    if (dataContent.length <= 2) {
-                        // Single characters are the actual streaming content
-                        fullResponse += dataContent;
+                    // Skip metadata strings
+                    if (dataContent === 'ChatGPT 4.1 nano' || 
+                        dataContent === 'botmodel' ||
+                        dataContent === 'trylimit') {
                         continue;
                     }
 
@@ -138,7 +107,7 @@ class TalkAIChat {
                     try {
                         const jsonData = JSON.parse(dataContent);
 
-                        // Skip metadata events
+                        // Skip metadata events (trylimit, etc.)
                         if (jsonData.limit !== undefined || jsonData.actualTries !== undefined) {
                             continue;
                         }
@@ -158,27 +127,19 @@ class TalkAIChat {
                             fullResponse += jsonData.content;
                         }
                     } catch (e) {
-                        // Not JSON, treat as plain text content
-                        // Filter out known metadata strings
-                        if (dataContent === 'ChatGPT 4.1 nano' || 
-                            dataContent === 'botmodel' ||
-                            dataContent === 'trylimit') {
-                            continue;
-                        }
-
-                        // This is actual response text
+                        // Not JSON - this is actual streaming text content
                         fullResponse += dataContent;
                     }
                 }
 
-                // Fallback: if no content parsed, try regex extraction on full response
+                // Fallback: if no content parsed, extract single-character data lines
                 if (!fullResponse && responseText) {
-                    // Extract all single-character data lines (the actual streaming content)
                     const charMatches = responseText.match(/data: ([^\n]{1,2})(?=\n)/g);
                     if (charMatches) {
                         fullResponse = charMatches
                             .map(m => m.replace('data: ', ''))
-                            .filter(c => c !== '[DONE]' && c.length > 0)
+                            .filter(c => c !== '[DONE]' && c.length > 0 && 
+                                   c !== 'ChatGPT 4.1 nano' && c !== 'botmodel' && c !== 'trylimit')
                             .join('');
                     }
                 }
@@ -186,6 +147,9 @@ class TalkAIChat {
                 // Clean response
                 fullResponse = fullResponse.replace(/^GPT\s*4\.1\s*nano/i, '').trim();
                 fullResponse = fullResponse.replace(/^ChatGPT\s*4\.1\s*nano/i, '').trim();
+
+                // Reset retry count on success
+                this.retryCount = 0;
 
                 // Add assistant response to history
                 if (fullResponse) {
@@ -211,17 +175,25 @@ class TalkAIChat {
                 };
             }
         } catch (error) {
-            // If unauthorized, try refreshing cookies once
-            if (error.response && error.response.status === 401 || error.response && error.response.status === 403) {
-                console.log('[ChatGPT] Auth failed, refreshing cookies...');
-                await this.getFreshCookies();
-                // Retry once
+            const statusCode = error.response ? error.response.status : null;
+
+            // Retry once on auth errors
+            if ((statusCode === 401 || statusCode === 403) && this.retryCount < this.maxRetries) {
+                this.retryCount++;
+                console.log(`[ChatGPT] Auth failed (HTTP ${statusCode}), retry ${this.retryCount}/${this.maxRetries}...`);
+
+                // Remove the last user message from history before retry
+                this.messagesHistory.pop();
+
                 return this.sendMessage(message);
             }
 
+            // Reset retry count
+            this.retryCount = 0;
+
             return {
                 success: false,
-                error: error.response ? `HTTP ${error.response.status}: ${error.response.statusText}` : error.message,
+                error: statusCode ? `HTTP ${statusCode}: ${error.response.statusText || 'Forbidden'}` : error.message,
                 response: null
             };
         }
@@ -229,6 +201,7 @@ class TalkAIChat {
 
     clearHistory() {
         this.messagesHistory = [];
+        this.retryCount = 0;
         return { success: true, message: 'History cleared' };
     }
 
@@ -258,12 +231,6 @@ async function chatgptai(prompt, sessionId = 'default') {
     }
 
     const chat = getSession(sessionId);
-
-    // Try to get fresh cookies on first use
-    if (chat.messagesHistory.length === 0) {
-        await chat.getFreshCookies();
-    }
-
     const result = await chat.sendMessage(prompt);
 
     return {
