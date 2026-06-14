@@ -1,4 +1,4 @@
-// api/chatgptai.js - ChatGPT AI Chat API
+// api/chatgptai.js - ChatGPT AI Chat API (Fixed SSE Support)
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 
@@ -10,7 +10,7 @@ class TalkAIChat {
             model: 'gpt-4.1-nano',
             temperature: 0.7
         };
-        
+
         // Browser-like headers
         this.headers = {
             'Accept': '*/*',
@@ -28,8 +28,8 @@ class TalkAIChat {
             'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36',
             'X-Requested-With': 'XMLHttpRequest'
         };
-        
-        // Session cookies
+
+        // Session cookies - will be updated dynamically
         this.cookies = {
             '_csrf-front': '9a6a7e474d538b963de0a21b79f12f96b87a3dacbc0f0b96ce591503bd82d0bda%3A2%3A%7Bi%3A0%3Bs%3A11%3A%22_csrf-front%22%3Bi%3A1%3Bs%3A32%3A%22ORCOPS08hHsSCJ3U_g4BasMGOaeqw-bS%22%3B%7D',
             'talkai-front': '4p9qa90qet46a52ore1l4k58h9'
@@ -38,6 +38,43 @@ class TalkAIChat {
 
     generateId() {
         return uuidv4();
+    }
+
+    // Get fresh cookies from talkai.info
+    async getFreshCookies() {
+        try {
+            const response = await axios.get('https://talkai.info/chat/', {
+                headers: {
+                    'User-Agent': this.headers['User-Agent'],
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                },
+                timeout: 10000,
+                maxRedirects: 5
+            });
+
+            const setCookie = response.headers['set-cookie'];
+            if (setCookie && Array.isArray(setCookie)) {
+                setCookie.forEach(cookie => {
+                    const match = cookie.match(/^([^=]+)=([^;]+)/);
+                    if (match) {
+                        this.cookies[match[1]] = match[2];
+                    }
+                });
+            }
+
+            // Try to get CSRF token from HTML
+            const html = response.data;
+            const csrfMatch = html.match(/name="_csrf-front" value="([^"]+)"/);
+            if (csrfMatch) {
+                this.cookies['_csrf-front'] = csrfMatch[1];
+            }
+
+            return true;
+        } catch (error) {
+            console.log('[ChatGPT] Failed to get fresh cookies:', error.message);
+            return false;
+        }
     }
 
     async sendMessage(message) {
@@ -50,7 +87,7 @@ class TalkAIChat {
         };
         this.messagesHistory.push(userMsg);
 
-        // Prepare payload
+        // Prepare payload (matching the screenshot exactly)
         const payload = {
             messagesHistory: this.messagesHistory,
             settings: this.settings,
@@ -68,54 +105,87 @@ class TalkAIChat {
             });
 
             let fullResponse = '';
-            
+
             if (response.status === 200) {
-                const lines = response.data.split('\n');
-                
+                const responseText = response.data;
+
+                // Parse SSE format properly
+                const lines = responseText.split('\n');
+
                 for (const line of lines) {
-                    if (line.trim() && line.startsWith('data: ')) {
-                        const dataContent = line.slice(6);
-                        
-                        if (dataContent.trim() === '[DONE]') break;
-                        
-                        try {
-                            const jsonData = JSON.parse(dataContent);
-                            
-                            // Extract content from various formats
-                            if (jsonData.choices && Array.isArray(jsonData.choices)) {
-                                for (const choice of jsonData.choices) {
-                                    if (choice.delta && choice.delta.content) {
-                                        fullResponse += choice.delta.content;
-                                    } else if (choice.text) {
-                                        fullResponse += choice.text;
-                                    }
-                                }
-                            } else if (jsonData.message && jsonData.message.content) {
-                                fullResponse += jsonData.message.content;
-                            } else if (jsonData.content) {
-                                fullResponse += jsonData.content;
-                            }
-                        } catch (e) {
-                            if (dataContent && dataContent !== '[DONE]') {
-                                fullResponse += dataContent;
-                            }
+                    const trimmedLine = line.trim();
+
+                    // Skip empty lines and non-data lines
+                    if (!trimmedLine || !trimmedLine.startsWith('data: ')) continue;
+
+                    const dataContent = trimmedLine.slice(6).trim();
+
+                    // Skip [DONE] marker
+                    if (dataContent === '[DONE]') continue;
+
+                    // Skip empty data
+                    if (!dataContent) continue;
+
+                    // Skip event metadata (botmodel, trylimit, etc.)
+                    // Only process actual content data
+                    if (dataContent.length <= 2) {
+                        // Single characters are the actual streaming content
+                        fullResponse += dataContent;
+                        continue;
+                    }
+
+                    // Try to parse as JSON first
+                    try {
+                        const jsonData = JSON.parse(dataContent);
+
+                        // Skip metadata events
+                        if (jsonData.limit !== undefined || jsonData.actualTries !== undefined) {
+                            continue;
                         }
+
+                        // Extract content from delta format
+                        if (jsonData.choices && Array.isArray(jsonData.choices)) {
+                            for (const choice of jsonData.choices) {
+                                if (choice.delta && choice.delta.content) {
+                                    fullResponse += choice.delta.content;
+                                } else if (choice.text) {
+                                    fullResponse += choice.text;
+                                }
+                            }
+                        } else if (jsonData.message && jsonData.message.content) {
+                            fullResponse += jsonData.message.content;
+                        } else if (jsonData.content) {
+                            fullResponse += jsonData.content;
+                        }
+                    } catch (e) {
+                        // Not JSON, treat as plain text content
+                        // Filter out known metadata strings
+                        if (dataContent === 'ChatGPT 4.1 nano' || 
+                            dataContent === 'botmodel' ||
+                            dataContent === 'trylimit') {
+                            continue;
+                        }
+
+                        // This is actual response text
+                        fullResponse += dataContent;
                     }
                 }
 
-                // Fallback: regex extraction
-                if (!fullResponse && response.data) {
-                    const matches = response.data.match(/"content":"([^"]+)"/g);
-                    if (matches) {
-                        fullResponse = matches.map(m => {
-                            const content = m.match(/"content":"([^"]+)"/);
-                            return content ? content[1] : '';
-                        }).join('');
+                // Fallback: if no content parsed, try regex extraction on full response
+                if (!fullResponse && responseText) {
+                    // Extract all single-character data lines (the actual streaming content)
+                    const charMatches = responseText.match(/data: ([^\n]{1,2})(?=\n)/g);
+                    if (charMatches) {
+                        fullResponse = charMatches
+                            .map(m => m.replace('data: ', ''))
+                            .filter(c => c !== '[DONE]' && c.length > 0)
+                            .join('');
                     }
                 }
 
                 // Clean response
                 fullResponse = fullResponse.replace(/^GPT\s*4\.1\s*nano/i, '').trim();
+                fullResponse = fullResponse.replace(/^ChatGPT\s*4\.1\s*nano/i, '').trim();
 
                 // Add assistant response to history
                 if (fullResponse) {
@@ -141,9 +211,17 @@ class TalkAIChat {
                 };
             }
         } catch (error) {
+            // If unauthorized, try refreshing cookies once
+            if (error.response && error.response.status === 401 || error.response && error.response.status === 403) {
+                console.log('[ChatGPT] Auth failed, refreshing cookies...');
+                await this.getFreshCookies();
+                // Retry once
+                return this.sendMessage(message);
+            }
+
             return {
                 success: false,
-                error: error.response ? `HTTP ${error.response.status}` : error.message,
+                error: error.response ? `HTTP ${error.response.status}: ${error.response.statusText}` : error.message,
                 response: null
             };
         }
@@ -180,8 +258,14 @@ async function chatgptai(prompt, sessionId = 'default') {
     }
 
     const chat = getSession(sessionId);
+
+    // Try to get fresh cookies on first use
+    if (chat.messagesHistory.length === 0) {
+        await chat.getFreshCookies();
+    }
+
     const result = await chat.sendMessage(prompt);
-    
+
     return {
         ...result,
         sessionId: sessionId,
