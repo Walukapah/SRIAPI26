@@ -1,4 +1,4 @@
-// server.js - Koyeb Optimized with AI Art Support
+// server.js - Koyeb Optimized with AI Art & AI Image Support
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -18,6 +18,7 @@ const maker = require('./api/textphoto');
 const youtubedl2 = require('./api/youtubedl2');
 const chatgptai = require('./api/chatgptai');
 const aiart = require('./api/aiart'); // AI Art Generator
+const aiimage = require('./api/aiimage'); // AI Image Generator (QuillBot)
 
 const app = express();
 
@@ -80,7 +81,7 @@ const STATS_FILE = 'api_stats1.json';
 const HEALTH_FILE = 'api_health.json';
 
 // ============================================
-// ENDPOINT NAME MAPPING - Added aiart
+// ENDPOINT NAME MAPPING - Added aiimage
 // ============================================
 
 const ENDPOINT_NAME_MAP = {
@@ -91,7 +92,8 @@ const ENDPOINT_NAME_MAP = {
     'textphoto': 'Text to Photo',
     'freefire': 'Free Fire Player Info',
     'chatgpt': 'ChatGPT AI Chat',
-    'aiart': 'AI Art Generator'
+    'aiart': 'AI Art Generator',
+    'aiimage': 'AI Image Generator'
 };
 
 function getEndpointName(path) {
@@ -212,7 +214,7 @@ function broadcastStatsUpdate() {
 }
 
 // ============================================
-// HEALTH CHECK SYSTEM - Added AI Art
+// HEALTH CHECK SYSTEM - Added AI Image
 // ============================================
 
 let healthStatus = {
@@ -231,7 +233,8 @@ const ENDPOINTS_TO_CHECK = [
     { name: 'Text to Photo', path: '/download/textphoto', method: 'GET', testParams: { url: 'https://textpro.me/create-naruto-logo-style-text-effect-online-1125.html', text: 'Test' } },
     { name: 'Free Fire Player Info', path: '/search/freefire', method: 'GET', testParams: { region: 'SG', uid: '2326343985' } },
     { name: 'ChatGPT AI', path: '/ai/chatgpt', method: 'GET', testParams: { prompt: 'Hello' } },
-    { name: 'AI Art Generator', path: '/ai/aiart', method: 'GET', testParams: { prompt: 'a beautiful sunset', format: 'json' } }
+    { name: 'AI Art Generator', path: '/ai/aiart', method: 'GET', testParams: { prompt: 'a beautiful sunset', format: 'json' } },
+    { name: 'AI Image Generator', path: '/ai/aiimage', method: 'GET', testParams: { prompt: 'a cat', format: 'json' } }
 ];
 
 // ============================================
@@ -741,7 +744,8 @@ app.use('/ai', limiter);
 app.use(['/download', '/search', '/ai'], async (req, res, next) => {
     const path = req.path;
     const validEndpoints = ['/youtubedl', '/youtubedl2', '/tiktokdl', 
-        '/instagramdl', '/textphoto', '/freefire', '/chatgpt', '/aiart'];
+        '/instagramdl', '/textphoto', '/freefire', '/chatgpt', '/aiart', '/aiimage'];
+
     const isValidEndpoint = validEndpoints.some(endpoint => path.includes(endpoint));
 
     if (isValidEndpoint) {
@@ -1164,6 +1168,96 @@ app.get('/ai/aiart/json', async (req, res) => {
 });
 
 // ============================================
+// AI IMAGE ENDPOINTS - QuillBot Integration
+// ============================================
+
+app.get('/ai/aiimage', async (req, res) => {
+  try {
+    const { prompt, format, category, aspectRatio } = req.query;
+    
+    if (!prompt) {
+      return res.status(400).json({ 
+        status: false, 
+        message: "Please provide a prompt parameter" 
+      });
+    }
+
+    const result = await aiimage(prompt, format || 'image');
+
+    if (!result.success) {
+      return res.status(500).json({
+        status: false,
+        creator: "WALUKA🇱🇰",
+        message: result.message || result.error
+      });
+    }
+
+    if (format === 'json') {
+      return res.json({
+        status: true,
+        creator: "WALUKA🇱🇰",
+        result: result.result
+      });
+    }
+
+    if (result.buffer) {
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Content-Length', result.size);
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      return res.end(result.buffer);
+    }
+
+    res.json({
+      status: true,
+      creator: "WALUKA🇱🇰",
+      result: result.result
+    });
+
+  } catch (error) {
+    console.error('AI Image API Error:', error);
+    res.status(500).json({ 
+      status: false, 
+      message: error.message 
+    });
+  }
+});
+
+app.get('/ai/aiimage/json', async (req, res) => {
+  try {
+    const { prompt, category, aspectRatio } = req.query;
+    
+    if (!prompt) {
+      return res.status(400).json({ 
+        status: false, 
+        message: "Please provide a prompt parameter" 
+      });
+    }
+
+    const result = await aiimage(prompt, 'json');
+
+    if (result.success) {
+      res.json({
+        status: true,
+        creator: "WALUKA🇱🇰",
+        result: result.result
+      });
+    } else {
+      res.status(500).json({
+        status: false,
+        message: result.message || result.error
+      });
+    }
+
+  } catch (error) {
+    console.error('AI Image JSON API Error:', error);
+    res.status(500).json({ 
+      status: false, 
+      message: error.message 
+    });
+  }
+});
+
+// ============================================
 // STATIC FILES
 // ============================================
 
@@ -1174,7 +1268,7 @@ app.get('/', (req, res) => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ============================================
-// ERROR HANDLING - Added aiart endpoints
+// ERROR HANDLING - Added aiimage endpoints
 // ============================================
 
 app.use((req, res) => {
@@ -1191,7 +1285,9 @@ app.use((req, res) => {
       "/ai/chatgpt",
       "/ai/chatgpt/clear",
       "/ai/aiart",
-      "/ai/aiart/json"
+      "/ai/aiart/json",
+      "/ai/aiimage",
+      "/ai/aiimage/json"
     ]
   });
 });
@@ -1206,13 +1302,13 @@ app.use((err, req, res, next) => {
 });
 
 // ============================================
-// START SERVER - Added AI Art
+// START SERVER - Added AI Image
 // ============================================
 
 const PORT = process.env.PORT || 3000;
 
 async function startServer() {
-    console.log('[STARTUP] Starting SRI API V3.0 with AI Art Support...');
+    console.log('[STARTUP] Starting SRI API V3.0 with AI Art & AI Image Support...');
     console.log(`[CONFIG] Environment: ${process.env.NODE_ENV || 'development'}`);
     
     const githubLoaded = await loadStatsFromGitHub();
@@ -1240,7 +1336,7 @@ async function startServer() {
         
         console.log(`
 ╔══════════════════════════════════════════╗
-║           SRI API V3.0 + AI ART          ║
+║        SRI API V3.0 + AI ART + IMAGE     ║
 ║       Server running on port ${PORT}        ║
 ║   URL: ${WEBSITE_URL.padEnd(28)}      ║
 ║                                          ║
@@ -1258,8 +1354,8 @@ async function startServer() {
 ║  • /download/textphoto                   ║
 ║  • /search/freefire                      ║
 ║  • /ai/chatgpt                           ║
-║  • /ai/aiart  ← NEW! 🎨                  ║
-║  • /ai/aiart/json                        ║
+║  • /ai/aiart  ← 🎨                       ║
+║  • /ai/aiimage  ← 🖼️ NEW!                ║
 ║                                          ║
 ║  Health: /health                         ║
 ║  Stats:   /stats                         ║
