@@ -537,10 +537,22 @@
                     { name: "prompt", type: "string", required: true, description: "Text description of the image you want to generate", placeholder: "a dragon sitting on castle wall at sunset" },
                     { name: "format", type: "string", required: false, description: "Response format: 'image' for direct image, 'json' for base64 JSON", placeholder: "json" }
                 ] 
+            },
+            { 
+                name: "AI Image Generator", 
+                path: "/ai/aiimage", 
+                method: "GET", 
+                description: "Generate AI images using QuillBot AI Image Generator. High quality images from text prompts with multiple aspect ratios.", 
+                params: [
+                    { name: "prompt", type: "string", required: true, description: "Text description of the image you want to generate", placeholder: "a beautiful cat playing with a ball" },
+                    { name: "format", type: "string", required: false, description: "Response format: 'image' for direct image, 'json' for URL JSON", placeholder: "json" },
+                    { name: "aspectRatio", type: "string", required: false, description: "Image aspect ratio: 1:1, 16:9, 9:16, 4:3, 3:4", placeholder: "1:1" }
+                ] 
             }
         ]
     }
 };
+
 
 
         let currentCategory = null, currentEndpoint = null, currentResponse = null, currentTab = 'curl', sidebarSearchQuery = '', isShowingAllApis = false;
