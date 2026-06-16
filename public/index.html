@@ -500,18 +500,89 @@
         title: "Download",
         icon: "download",
         endpoints: [
-            { name: "YouTube Downloader", path: "/download/youtubedl", method: "GET", description: "Download YouTube videos in multiple formats and qualities using ytsave.to API integration.", params: [{ name: "url", type: "string", required: true, description: "YouTube video URL (youtube.com or youtu.be)", placeholder: "https://youtube.com/watch?v=dQw4w9WgXcQ" }] },
-            { name: "YouTube Downloader V2", path: "/download/youtubedl2", method: "GET", description: "Alternative YouTube downloader using ytdown.to API with enhanced format support.", params: [{ name: "url", type: "string", required: true, description: "YouTube video URL", placeholder: "https://youtube.com/watch?v=dQw4w9WgXcQ" }] },
-            { name: "TikTok Downloader", path: "/download/tiktokdl", method: "GET", description: "Download TikTok videos without watermark, with metadata and music extraction support.", params: [{ name: "url", type: "string", required: true, description: "TikTok video URL (tiktok.com or vm.tiktok.com)", placeholder: "https://vt.tiktok.com/ZSuYLQkMm/" }] },
-            { name: "Instagram Downloader", path: "/download/instagramdl", method: "GET", description: "Download Instagram videos, reels, and images with thumbnail extraction.", params: [{ name: "url", type: "string", required: true, description: "Instagram post/reel URL", placeholder: "https://www.instagram.com/reel/DKR-FW1yo_p/" }] },
-            { name: "Text to Photo", path: "/download/textphoto", method: "GET", description: "Generate stylized text images using ephoto360, photooxy, and textpro templates.", params: [{ name: "url", type: "string", required: true, description: "Template URL from ephoto360.com, photooxy.com, or textpro.me", placeholder: "https://textpro.me/create-naruto-logo-style-text-effect-online-1125.html" }, { name: "text", type: "string", required: true, description: "First text parameter", placeholder: "SRI API W" }] }
+            { 
+                name: "YouTube Downloader", 
+                path: "/download/youtubedl", 
+                method: "GET", 
+                description: "Download YouTube videos in multiple formats and qualities using ytsave.to API integration.", 
+                params: [
+                    { name: "url", type: "string", required: true, description: "YouTube video URL (youtube.com or youtu.be)", placeholder: "https://youtube.com/watch?v=dQw4w9WgXcQ" }
+                ] 
+            },
+            { 
+                name: "YouTube Downloader V2", 
+                path: "/download/youtubedl2", 
+                method: "GET", 
+                description: "Alternative YouTube downloader using ytdown.to API with enhanced format support.", 
+                params: [
+                    { name: "url", type: "string", required: true, description: "YouTube video URL", placeholder: "https://youtube.com/watch?v=dQw4w9WgXcQ" }
+                ] 
+            },
+            { 
+                name: "TikTok Downloader", 
+                path: "/download/tiktokdl", 
+                method: "GET", 
+                description: "Download TikTok videos without watermark, with metadata and music extraction support.", 
+                params: [
+                    { name: "url", type: "string", required: true, description: "TikTok video URL (tiktok.com or vm.tiktok.com)", placeholder: "https://vt.tiktok.com/ZSuYLQkMm/" }
+                ] 
+            },
+            { 
+                name: "Instagram Downloader", 
+                path: "/download/instagramdl", 
+                method: "GET", 
+                description: "Download Instagram videos, reels, and images with thumbnail extraction.", 
+                params: [
+                    { name: "url", type: "string", required: true, description: "Instagram post/reel URL", placeholder: "https://www.instagram.com/reel/DKR-FW1yo_p/" }
+                ] 
+            },
+            { 
+                name: "Text to Photo", 
+                path: "/download/textphoto", 
+                method: "GET", 
+                description: "Generate stylized text images using ephoto360, photooxy, and textpro templates.", 
+                params: [
+                    { name: "url", type: "string", required: true, description: "Template URL from ephoto360.com, photooxy.com, or textpro.me", placeholder: "https://textpro.me/create-naruto-logo-style-text-effect-online-1125.html" },
+                    { name: "text", type: "string", required: true, description: "First text parameter", placeholder: "SRI API W" }
+                ] 
+            },
+            { 
+                name: "Modrinth Plugin Download", 
+                path: "/download/modrithpl", 
+                method: "GET", 
+                description: "Get full plugin details and all download links from Modrinth. Supports URLs, project IDs, and slugs. Returns all versions with direct download links.", 
+                params: [
+                    { name: "url", type: "string", required: true, description: "Modrinth plugin URL, project ID, or slug", placeholder: "https://modrinth.com/plugin/veinminer" }
+                ] 
+            }
         ]
     },
     search: {
         title: "Search",
         icon: "search",
         endpoints: [
-            { name: "Free Fire Player Info", path: "/search/freefire", method: "GET", description: "Retrieve detailed player statistics, clan info, and profile data from Free Fire game.", params: [{ name: "region", type: "string", required: true, description: "Game server region (e.g., SG, ID, BR, US)", placeholder: "SG" }, { name: "uid", type: "string", required: true, description: "Player unique ID number", placeholder: "2326343985" }] }
+            { 
+                name: "Free Fire Player Info", 
+                path: "/search/freefire", 
+                method: "GET", 
+                description: "Retrieve detailed player statistics, clan info, and profile data from Free Fire game.", 
+                params: [
+                    { name: "region", type: "string", required: true, description: "Game server region (e.g., SG, ID, BR, US)", placeholder: "SG" },
+                    { name: "uid", type: "string", required: true, description: "Player unique ID number", placeholder: "2326343985" }
+                ] 
+            },
+            { 
+                name: "Modrinth Plugin Search", 
+                path: "/search/modrithpl", 
+                method: "GET", 
+                description: "Search for Minecraft plugins/mods on Modrinth. Find plugins by name, keyword, or category with detailed results.", 
+                params: [
+                    { name: "query", type: "string", required: true, description: "Search query (plugin name or keyword)", placeholder: "veinminer" },
+                    { name: "limit", type: "number", required: false, description: "Number of results (1-100, default: 20)", placeholder: "20" },
+                    { name: "offset", type: "number", required: false, description: "Offset for pagination", placeholder: "0" },
+                    { name: "sort", type: "string", required: false, description: "Sort by: relevance, downloads, follows, newest, updated", placeholder: "relevance" }
+                ] 
+            }
         ]
     },
     ai: {
@@ -524,7 +595,7 @@
                 method: "GET", 
                 description: "Advanced AI chat powered by GPT-4.1-nano. Supports conversation history with session management for continuous conversations.", 
                 params: [
-                    { name: "prompt", type: "string", required: true, description: "Your message or question to the AI", placeholder: "Hello, how are you?" }, 
+                    { name: "prompt", type: "string", required: true, description: "Your message or question to the AI", placeholder: "Hello, how are you?" },
                     { name: "sessionId", type: "string", required: false, description: "Optional session ID for conversation continuity (use same ID to continue conversation)", placeholder: "user123" }
                 ] 
             },
@@ -536,17 +607,6 @@
                 params: [
                     { name: "prompt", type: "string", required: true, description: "Text description of the image you want to generate", placeholder: "a dragon sitting on castle wall at sunset" },
                     { name: "format", type: "string", required: false, description: "Response format: 'image' for direct image, 'json' for base64 JSON", placeholder: "json" }
-                ] 
-            },
-            { 
-                name: "AI Image Generator", 
-                path: "/ai/aiimage", 
-                method: "GET", 
-                description: "Generate AI images using QuillBot AI Image Generator. High quality images from text prompts with multiple aspect ratios.", 
-                params: [
-                    { name: "prompt", type: "string", required: true, description: "Text description of the image you want to generate", placeholder: "a beautiful cat playing with a ball" },
-                    { name: "format", type: "string", required: false, description: "Response format: 'image' for direct image, 'json' for URL JSON", placeholder: "json" },
-                    { name: "aspectRatio", type: "string", required: false, description: "Image aspect ratio: 1:1, 16:9, 9:16, 4:3, 3:4", placeholder: "1:1" }
                 ] 
             }
         ]
