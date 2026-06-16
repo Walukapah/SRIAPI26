@@ -31,8 +31,7 @@ async function modrithplsearch(query, limit = 20, offset = 0, sort = 'relevance'
             query: query.trim(),
             limit: Math.min(Math.max(parseInt(limit) || 20, 1), 100),
             offset: parseInt(offset) || 0,
-            index: sortIndex,
-            facets: JSON.stringify([["project_type:mod"], ["project_type:plugin"]])
+            index: sortIndex
         };
 
         console.log(`[MODRINTH SEARCH] Searching for: "${query}" | Limit: ${params.limit} | Sort: ${sortIndex}`);
@@ -53,13 +52,17 @@ async function modrithplsearch(query, limit = 20, offset = 0, sort = 'relevance'
             };
         }
 
-        // Format results
+        // Format results - match real Modrinth API response structure
         const results = response.data.hits.map(hit => ({
             project_id: hit.project_id,
+            project_type: hit.project_type,
             slug: hit.slug,
             title: hit.title,
             description: hit.description,
             author: hit.author,
+            author_id: hit.author_id,
+            organization: hit.organization,
+            organization_id: hit.organization_id,
             downloads: hit.downloads,
             follows: hit.follows,
             icon_url: hit.icon_url,
@@ -67,10 +70,14 @@ async function modrithplsearch(query, limit = 20, offset = 0, sort = 'relevance'
             license: hit.license,
             client_side: hit.client_side,
             server_side: hit.server_side,
-            categories: hit.display_categories || hit.categories,
+            categories: hit.categories,
+            display_categories: hit.display_categories,
             versions: hit.versions,
             date_created: hit.date_created,
             date_modified: hit.date_modified,
+            gallery: hit.gallery || [],
+            featured_gallery: hit.featured_gallery,
+            color: hit.color,
             modrinth_url: `https://modrinth.com/plugin/${hit.slug}`,
             project_url: `https://modrinth.com/project/${hit.project_id}`
         }));
@@ -79,8 +86,8 @@ async function modrithplsearch(query, limit = 20, offset = 0, sort = 'relevance'
             success: true,
             query: query.trim(),
             total_results: response.data.total_hits,
-            limit: params.limit,
-            offset: params.offset,
+            limit: response.data.limit,
+            offset: response.data.offset,
             sort: sortIndex,
             results: results
         };
