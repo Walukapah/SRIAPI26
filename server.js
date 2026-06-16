@@ -1,4 +1,4 @@
-// server.js - Koyeb Optimized with AI Art & AI Image Support
+// server.js - Koyeb Optimized with AI Art Support + Modrinth Plugin APIs
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -18,7 +18,8 @@ const maker = require('./api/textphoto');
 const youtubedl2 = require('./api/youtubedl2');
 const chatgptai = require('./api/chatgptai');
 const aiart = require('./api/aiart'); // AI Art Generator
-const aiimage = require('./api/aiimage'); // AI Image Generator (QuillBot)
+const modrithplsearch = require('./api/modrithplsearch'); // Modrinth Plugin Search
+const modrithpldownload = require('./api/modrithpldownload'); // Modrinth Plugin Download
 
 const app = express();
 
@@ -81,7 +82,7 @@ const STATS_FILE = 'api_stats1.json';
 const HEALTH_FILE = 'api_health.json';
 
 // ============================================
-// ENDPOINT NAME MAPPING - Added aiimage
+// ENDPOINT NAME MAPPING - Added modrinth
 // ============================================
 
 const ENDPOINT_NAME_MAP = {
@@ -93,7 +94,8 @@ const ENDPOINT_NAME_MAP = {
     'freefire': 'Free Fire Player Info',
     'chatgpt': 'ChatGPT AI Chat',
     'aiart': 'AI Art Generator',
-    'aiimage': 'AI Image Generator'
+    'modrithpl': 'Modrinth Plugin Search',
+    'modrithpldownload': 'Modrinth Plugin Download'
 };
 
 function getEndpointName(path) {
@@ -214,7 +216,7 @@ function broadcastStatsUpdate() {
 }
 
 // ============================================
-// HEALTH CHECK SYSTEM - Added AI Image
+// HEALTH CHECK SYSTEM - Added Modrinth
 // ============================================
 
 let healthStatus = {
@@ -234,7 +236,8 @@ const ENDPOINTS_TO_CHECK = [
     { name: 'Free Fire Player Info', path: '/search/freefire', method: 'GET', testParams: { region: 'SG', uid: '2326343985' } },
     { name: 'ChatGPT AI', path: '/ai/chatgpt', method: 'GET', testParams: { prompt: 'Hello' } },
     { name: 'AI Art Generator', path: '/ai/aiart', method: 'GET', testParams: { prompt: 'a beautiful sunset', format: 'json' } },
-    { name: 'AI Image Generator', path: '/ai/aiimage', method: 'GET', testParams: { prompt: 'a cat', format: 'json' } }
+    { name: 'Modrinth Plugin Search', path: '/search/modrithpl', method: 'GET', testParams: { query: 'veinminer' } },
+    { name: 'Modrinth Plugin Download', path: '/download/modrithpl', method: 'GET', testParams: { url: 'https://modrinth.com/plugin/veinminer' } }
 ];
 
 // ============================================
@@ -314,7 +317,7 @@ async function loadStatsFromGitHub() {
             stats.lastUpdated = parsedStats.lastUpdated || new Date().toISOString();
             stats.lastVisitorDate = parsedStats.lastVisitorDate || getTodayString();
         }
-        
+
         checkAndRollVisitors();
         const cleanedEndpoints = {};
         Object.keys(stats.endpointCalls).forEach(key => {
@@ -744,15 +747,15 @@ app.use('/ai', limiter);
 app.use(['/download', '/search', '/ai'], async (req, res, next) => {
     const path = req.path;
     const validEndpoints = ['/youtubedl', '/youtubedl2', '/tiktokdl', 
-        '/instagramdl', '/textphoto', '/freefire', '/chatgpt', '/aiart', '/aiimage'];
-
+        '/instagramdl', '/textphoto', '/freefire', '/chatgpt', '/aiart',
+        '/modrithpl'];
     const isValidEndpoint = validEndpoints.some(endpoint => path.includes(endpoint));
 
     if (isValidEndpoint) {
         const endpointName = getEndpointName(path);
         const clientIp = req.headers['x-forwarded-for'] || req.ip || 'unknown';
         const fingerprint = getRequestFingerprint(clientIp, endpointName);
-        
+
         if (wasRecentlyCounted(fingerprint)) {
             console.log(`[API CALL] ➜ ${endpointName} | SKIPPED (duplicate within 5s)`);
             return next();
@@ -1084,7 +1087,7 @@ app.get('/ai/chatgpt/clear', (req, res) => {
 app.get('/ai/aiart', async (req, res) => {
   try {
     const { prompt, format } = req.query;
-    
+
     if (!prompt) {
       return res.status(400).json({ 
         status: false, 
@@ -1135,7 +1138,7 @@ app.get('/ai/aiart', async (req, res) => {
 app.get('/ai/aiart/json', async (req, res) => {
   try {
     const { prompt } = req.query;
-    
+
     if (!prompt) {
       return res.status(400).json({ 
         status: false, 
@@ -1168,93 +1171,99 @@ app.get('/ai/aiart/json', async (req, res) => {
 });
 
 // ============================================
-// AI IMAGE ENDPOINTS - QuillBot Integration
+// MODRINTH PLUGIN SEARCH API
 // ============================================
 
-app.get('/ai/aiimage', async (req, res) => {
-  try {
-    const { prompt, format, category, aspectRatio } = req.query;
-    
-    if (!prompt) {
-      return res.status(400).json({ 
-        status: false, 
-        message: "Please provide a prompt parameter" 
-      });
+app.get('/search/modrithpl', async (req, res) => {
+    try {
+        const { query, q, limit, offset, sort } = req.query;
+        const searchQuery = query || q;
+
+        if (!searchQuery) {
+            return res.status(400).json({
+                status: false,
+                creator: "WALUKA🇱🇰",
+                message: "Please provide a search query (use ?query= or ?q= parameter)"
+            });
+        }
+
+        const result = await modrithplsearch(
+            searchQuery,
+            limit,
+            offset,
+            sort
+        );
+
+        if (result.success) {
+            res.json({
+                status: true,
+                creator: "WALUKA🇱🇰",
+                result: result
+            });
+        } else {
+            res.status(500).json({
+                status: false,
+                creator: "WALUKA🇱🇰",
+                message: result.error
+            });
+        }
+
+    } catch (error) {
+        console.error('Modrinth Search API Error:', error);
+        res.status(500).json({
+            status: false,
+            creator: "WALUKA🇱🇰",
+            message: error.message
+        });
     }
-
-    const result = await aiimage(prompt, format || 'image');
-
-    if (!result.success) {
-      return res.status(500).json({
-        status: false,
-        creator: "WALUKA🇱🇰",
-        message: result.message || result.error
-      });
-    }
-
-    if (format === 'json') {
-      return res.json({
-        status: true,
-        creator: "WALUKA🇱🇰",
-        result: result.result
-      });
-    }
-
-    if (result.buffer) {
-      res.setHeader('Content-Type', 'image/jpeg');
-      res.setHeader('Content-Length', result.size);
-      res.setHeader('Cache-Control', 'public, max-age=3600');
-      return res.end(result.buffer);
-    }
-
-    res.json({
-      status: true,
-      creator: "WALUKA🇱🇰",
-      result: result.result
-    });
-
-  } catch (error) {
-    console.error('AI Image API Error:', error);
-    res.status(500).json({ 
-      status: false, 
-      message: error.message 
-    });
-  }
 });
 
-app.get('/ai/aiimage/json', async (req, res) => {
-  try {
-    const { prompt, category, aspectRatio } = req.query;
-    
-    if (!prompt) {
-      return res.status(400).json({ 
-        status: false, 
-        message: "Please provide a prompt parameter" 
-      });
+// ============================================
+// MODRINTH PLUGIN DOWNLOAD/DETAILS API
+// ============================================
+
+app.get('/download/modrithpl', async (req, res) => {
+    try {
+        const { url, id, slug, project } = req.query;
+        const identifier = url || id || slug || project;
+
+        if (!identifier) {
+            return res.status(400).json({
+                status: false,
+                creator: "WALUKA🇱🇰",
+                message: "Please provide a plugin identifier. Use ?url=, ?id=, ?slug=, or ?project=",
+                examples: [
+                    "/download/modrithpl?url=https://modrinth.com/plugin/veinminer",
+                    "/download/modrithpl?id=OhduvhIc",
+                    "/download/modrithpl?slug=veinminer"
+                ]
+            });
+        }
+
+        const result = await modrithpldownload(identifier);
+
+        if (result.success) {
+            res.json({
+                status: true,
+                creator: "WALUKA🇱🇰",
+                result: result
+            });
+        } else {
+            res.status(404).json({
+                status: false,
+                creator: "WALUKA🇱🇰",
+                message: result.error
+            });
+        }
+
+    } catch (error) {
+        console.error('Modrinth Download API Error:', error);
+        res.status(500).json({
+            status: false,
+            creator: "WALUKA🇱🇰",
+            message: error.message
+        });
     }
-
-    const result = await aiimage(prompt, 'json');
-
-    if (result.success) {
-      res.json({
-        status: true,
-        creator: "WALUKA🇱🇰",
-        result: result.result
-      });
-    } else {
-      res.status(500).json({
-        status: false,
-        message: result.message || result.error
-      });
-    }
-
-  } catch (error) {
-    console.error('AI Image JSON API Error:', error);
-    res.status(500).json({ 
-      status: false, 
-      message: error.message 
-    });
-  }
 });
 
 // ============================================
@@ -1268,7 +1277,7 @@ app.get('/', (req, res) => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ============================================
-// ERROR HANDLING - Added aiimage endpoints
+// ERROR HANDLING - Added modrinth endpoints
 // ============================================
 
 app.use((req, res) => {
@@ -1281,13 +1290,13 @@ app.use((req, res) => {
       "/download/tiktokdl",
       "/download/instagramdl",
       "/download/textphoto",
+      "/download/modrithpl",
       "/search/freefire",
+      "/search/modrithpl",
       "/ai/chatgpt",
       "/ai/chatgpt/clear",
       "/ai/aiart",
-      "/ai/aiart/json",
-      "/ai/aiimage",
-      "/ai/aiimage/json"
+      "/ai/aiart/json"
     ]
   });
 });
@@ -1302,41 +1311,41 @@ app.use((err, req, res, next) => {
 });
 
 // ============================================
-// START SERVER - Added AI Image
+// START SERVER - Added Modrinth APIs
 // ============================================
 
 const PORT = process.env.PORT || 3000;
 
 async function startServer() {
-    console.log('[STARTUP] Starting SRI API V3.0 with AI Art & AI Image Support...');
+    console.log('[STARTUP] Starting SRI API V3.0 with AI Art + Modrinth Support...');
     console.log(`[CONFIG] Environment: ${process.env.NODE_ENV || 'development'}`);
-    
+
     const githubLoaded = await loadStatsFromGitHub();
     if (!githubLoaded) loadStatsFromLocal();
-    
+
     await loadHealthFromGitHub();
-    
+
     startAutoSave();
-    
+
     app.listen(PORT, '0.0.0.0', async () => {
         checkAndRollVisitors();
-        
+
         const now = getSriLankanTime();
         const todaySL = getSriLankanDateString();
-        
+
         if (!healthStatus.lastCheckDate || healthStatus.lastCheckDate !== todaySL) {
             console.log('[STARTUP] Running initial health check...');
             await performDailyHealthCheck(true);
         }
-        
+
         startDailyHealthCheckScheduler();
-        
+
         const todayCount = stats.visitors || 0;
         const totalCount = (stats.totalVisitors || 0) + todayCount;
-        
+
         console.log(`
 ╔══════════════════════════════════════════╗
-║        SRI API V3.0 + AI ART + IMAGE     ║
+║     SRI API V3.0 + AI ART + MODRINTH     ║
 ║       Server running on port ${PORT}        ║
 ║   URL: ${WEBSITE_URL.padEnd(28)}      ║
 ║                                          ║
@@ -1352,10 +1361,12 @@ async function startServer() {
 ║  • /download/tiktokdl                    ║
 ║  • /download/instagramdl                 ║
 ║  • /download/textphoto                   ║
+║  • /download/modrithpl  ← NEW! 🔌        ║
 ║  • /search/freefire                      ║
+║  • /search/modrithpl    ← NEW! 🔌        ║
 ║  • /ai/chatgpt                           ║
-║  • /ai/aiart  ← 🎨                       ║
-║  • /ai/aiimage  ← 🖼️ NEW!                ║
+║  • /ai/aiart  ← NEW! 🎨                  ║
+║  • /ai/aiart/json                        ║
 ║                                          ║
 ║  Health: /health                         ║
 ║  Stats:   /stats                         ║
