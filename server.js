@@ -16,7 +16,7 @@ const instagramdl = require('./api/instagramdl');
 const freefireinfo = require('./api/freefireinfo');
 const maker = require('./api/textphoto');
 const youtubedl2 = require('./api/youtubedl2');
-const chatgptai = require('./api/chatgptai');
+const aichat = require('./api/aichat'); // AI Chat using SurfSense API
 const aiart = require('./api/aiart'); // AI Art Generator
 const modrithplsearch = require('./api/modrithplsearch'); // Modrinth Plugin Search
 const modrithpldownload = require('./api/modrithpldownload'); // Modrinth Plugin Download
@@ -92,7 +92,7 @@ const ENDPOINT_NAME_MAP = {
     'instagramdl': 'Instagram Downloader',
     'textphoto': 'Text to Photo',
     'freefire': 'Free Fire Player Info',
-    'chatgpt': 'ChatGPT AI Chat',
+    'aichat': 'AI Chat',
     'aiart': 'AI Art Generator',
     'modrithpl': 'Modrinth Plugin Search',
     'modrithpldownload': 'Modrinth Plugin Download'
@@ -234,7 +234,7 @@ const ENDPOINTS_TO_CHECK = [
     { name: 'Instagram Downloader', path: '/download/instagramdl', method: 'GET', testParams: { url: 'https://www.instagram.com/reel/DKR-FW1yo_p/' } },
     { name: 'Text to Photo', path: '/download/textphoto', method: 'GET', testParams: { url: 'https://textpro.me/create-naruto-logo-style-text-effect-online-1125.html', text: 'Test' } },
     { name: 'Free Fire Player Info', path: '/search/freefire', method: 'GET', testParams: { region: 'SG', uid: '2326343985' } },
-    { name: 'ChatGPT AI', path: '/ai/chatgpt', method: 'GET', testParams: { prompt: 'Hello' } },
+    { name: 'AI Chat', path: '/ai/aichat', method: 'GET', testParams: { prompt: 'Hello' } },
     { name: 'AI Art Generator', path: '/ai/aiart', method: 'GET', testParams: { prompt: 'a beautiful sunset', format: 'json' } },
     { name: 'Modrinth Plugin Search', path: '/search/modrithpl', method: 'GET', testParams: { query: 'veinminer' } },
     { name: 'Modrinth Plugin Download', path: '/download/modrithpl', method: 'GET', testParams: { url: 'https://modrinth.com/plugin/veinminer' } }
@@ -747,7 +747,7 @@ app.use('/ai', limiter);
 app.use(['/download', '/search', '/ai'], async (req, res, next) => {
     const path = req.path;
     const validEndpoints = ['/youtubedl', '/youtubedl2', '/tiktokdl', 
-        '/instagramdl', '/textphoto', '/freefire', '/chatgpt', '/aiart',
+        '/instagramdl', '/textphoto', '/freefire', '/aichat', '/aiart',
         '/modrithpl'];
     const isValidEndpoint = validEndpoints.some(endpoint => path.includes(endpoint));
 
@@ -1027,16 +1027,16 @@ app.get('/download/textphoto', async (req, res) => {
   }
 });
 
-app.get('/ai/chatgpt', async (req, res) => {
+app.get('/ai/aichat', async (req, res) => {
   try {
-    const { prompt, sessionId } = req.query;
+    const { prompt } = req.query;
     if (!prompt) {
       return res.status(400).json({ 
         status: false, 
         message: "Please provide a prompt parameter" 
       });
     }
-    const result = await chatgptai(prompt, sessionId);
+    const result = await aichat(prompt);
     if (result.success) {
       res.json({ 
         status: true, 
@@ -1045,34 +1045,19 @@ app.get('/ai/chatgpt', async (req, res) => {
           query: prompt,
           response: result.response,
           model: result.model,
-          sessionId: result.sessionId
+          messageId: result.messageId,
+          usage: result.usage,
+          quota: result.quota
         }
       });
     } else {
-      res.status(500).json({ 
+      res.status(result.statusCode || 500).json({ 
         status: false, 
         message: result.error 
       });
     }
   } catch (error) {
     console.error('API Error:', error);
-    res.status(500).json({ 
-      status: false, 
-      message: error.message 
-    });
-  }
-});
-
-app.get('/ai/chatgpt/clear', (req, res) => {
-  try {
-    const { sessionId } = req.query;
-    const result = chatgptai.clearHistory(sessionId);
-    res.json({ 
-      status: true, 
-      creator: "WALUKA🇱🇰", 
-      result: result 
-    });
-  } catch (error) {
     res.status(500).json({ 
       status: false, 
       message: error.message 
@@ -1293,8 +1278,7 @@ app.use((req, res) => {
       "/download/modrithpl",
       "/search/freefire",
       "/search/modrithpl",
-      "/ai/chatgpt",
-      "/ai/chatgpt/clear",
+      "/ai/aichat",
       "/ai/aiart",
       "/ai/aiart/json"
     ]
@@ -1317,7 +1301,7 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 3000;
 
 async function startServer() {
-    console.log('[STARTUP] Starting SRI API V3.0 with AI Art + Modrinth Support...');
+    console.log('[STARTUP] Starting SRI API V3.0 with AI Chat + AI Art + Modrinth Support...');
     console.log(`[CONFIG] Environment: ${process.env.NODE_ENV || 'development'}`);
 
     const githubLoaded = await loadStatsFromGitHub();
@@ -1345,7 +1329,7 @@ async function startServer() {
 
         console.log(`
 ╔══════════════════════════════════════════╗
-║     SRI API V3.0 + AI ART + MODRINTH     ║
+║   SRI API V3.0 + AI CHAT + AI ART + MOD  ║
 ║       Server running on port ${PORT}        ║
 ║   URL: ${WEBSITE_URL.padEnd(28)}      ║
 ║                                          ║
@@ -1364,7 +1348,7 @@ async function startServer() {
 ║  • /download/modrithpl  ← NEW! 🔌        ║
 ║  • /search/freefire                      ║
 ║  • /search/modrithpl    ← NEW! 🔌        ║
-║  • /ai/chatgpt                           ║
+║  • /ai/aichat  ← NEW! 🤖                 ║
 ║  • /ai/aiart  ← NEW! 🎨                  ║
 ║  • /ai/aiart/json                        ║
 ║                                          ║
