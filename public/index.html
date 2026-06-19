@@ -590,14 +590,13 @@
         icon: "cpu",
         endpoints: [
             { 
-                name: "ChatGPT AI Chat", 
-                path: "/ai/chatgpt", 
+                name: "AI Chat", 
+                path: "/ai/aichat", 
                 method: "GET", 
-                description: "Advanced AI chat powered by GPT-4.1-nano. Supports conversation history with session management for continuous conversations.", 
+                description: "Advanced AI chat powered by GPT-5.4-mini via SurfSense API. Get intelligent responses to any question or prompt.", 
                 params: [
-                    { name: "prompt", type: "string", required: true, description: "Your message or question to the AI", placeholder: "Hello, how are you?" },
-                    { name: "sessionId", type: "string", required: false, description: "Optional session ID for conversation continuity (use same ID to continue conversation)", placeholder: "user123" }
-                ] 
+                    { name: "prompt", type: "string", required: true, description: "Your message or question to the AI", placeholder: "Hello, how are you?" }
+                ]
             },
             { 
                 name: "AI Art Generator", 
