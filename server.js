@@ -1258,30 +1258,28 @@ app.get('/download/modrithpl', async (req, res) => {
     }
 });
 
-
 // ============================================
-// PORNPICS SEARCH API
+// PORNPICS SEARCH API - q parameter only
 // ============================================
 
 app.get('/search/pornpicsearch', async (req, res) => {
   try {
-    const { q, url } = req.query;
+    const { q } = req.query;
     
-    if (!q && !url) {
+    if (!q) {
       return res.status(400).json({
         status: false,
         creator: "WALUKA🇱🇰",
-        message: "Please provide a query (q) or URL parameter",
+        message: "Please provide a query parameter (q)",
         examples: [
-          "/search/pornpicsearch?q=mia+khalifa",
           "/search/pornpicsearch?q=latina",
-          "/search/pornpicsearch?url=https://www.pornpics.com/latina/"
+          "/search/pornpicsearch?q=mia+khalifa",
+          "/search/pornpicsearch?q=https://www.pornpics.com/latina/"
         ]
       });
     }
 
-    const query = url || q;
-    const result = await pornpicsearch(query);
+    const result = await pornpicsearch(q);
 
     if (result.success) {
       res.json({
@@ -1306,6 +1304,7 @@ app.get('/search/pornpicsearch', async (req, res) => {
     });
   }
 });
+
 
 
 // ============================================
