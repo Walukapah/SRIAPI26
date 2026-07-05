@@ -93,11 +93,13 @@ const ENDPOINT_NAME_MAP = {
     'instagramdl': 'Instagram Downloader',
     'textphoto': 'Text to Photo',
     'freefire': 'Free Fire Player Info',
-    'aichat': 'AI Chat',
+    'chatgpt': 'ChatGPT AI Chat',
     'aiart': 'AI Art Generator',
     'modrithpl': 'Modrinth Plugin Search',
-    'modrithpldownload': 'Modrinth Plugin Download'
+    'modrithpldownload': 'Modrinth Plugin Download',
+    'pornpicsearch': 'PornPics Search'  // ⬅️ ADD THIS
 };
+
 
 function getEndpointName(path) {
     const parts = path.split('/').filter(p => p);
