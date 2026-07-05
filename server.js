@@ -751,9 +751,11 @@ app.use('/ai', limiter);
 
 app.use(['/download', '/search', '/ai'], async (req, res, next) => {
     const path = req.path;
+    
     const validEndpoints = ['/youtubedl', '/youtubedl2', '/tiktokdl', 
-        '/instagramdl', '/textphoto', '/freefire', '/aichat', '/aiart',
-        '/modrithpl'];
+    '/instagramdl', '/textphoto', '/freefire', '/chatgpt', '/aiart',
+    '/modrithpl', '/pornpicsearch'];  // ⬅️ ADD THIS
+
     const isValidEndpoint = validEndpoints.some(endpoint => path.includes(endpoint));
 
     if (isValidEndpoint) {
