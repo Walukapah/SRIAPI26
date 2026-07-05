@@ -1256,6 +1256,56 @@ app.get('/download/modrithpl', async (req, res) => {
     }
 });
 
+
+// ============================================
+// PORNPICS SEARCH API
+// ============================================
+
+app.get('/search/pornpicsearch', async (req, res) => {
+  try {
+    const { q, url } = req.query;
+    
+    if (!q && !url) {
+      return res.status(400).json({
+        status: false,
+        creator: "WALUKA🇱🇰",
+        message: "Please provide a query (q) or URL parameter",
+        examples: [
+          "/search/pornpicsearch?q=mia+khalifa",
+          "/search/pornpicsearch?q=latina",
+          "/search/pornpicsearch?url=https://www.pornpics.com/latina/"
+        ]
+      });
+    }
+
+    const query = url || q;
+    const result = await pornpicsearch(query);
+
+    if (result.success) {
+      res.json({
+        status: true,
+        creator: "WALUKA🇱🇰",
+        result: result.result
+      });
+    } else {
+      res.status(500).json({
+        status: false,
+        creator: "WALUKA🇱🇰",
+        message: result.error
+      });
+    }
+
+  } catch (error) {
+    console.error('PornPics Search API Error:', error);
+    res.status(500).json({
+      status: false,
+      creator: "WALUKA🇱🇰",
+      message: error.message
+    });
+  }
+});
+
+
 // ============================================
 // STATIC FILES
 // ============================================
@@ -1283,6 +1333,7 @@ app.use((req, res) => {
       "/download/modrithpl",
       "/search/freefire",
       "/search/modrithpl",
+      "/search/pornpicsearch",
       "/ai/aichat",
       "/ai/aiart",
       "/ai/aiart/json"
@@ -1333,34 +1384,21 @@ async function startServer() {
         const totalCount = (stats.totalVisitors || 0) + todayCount;
 
         console.log(`
-╔══════════════════════════════════════════╗
-║   SRI API V3.0 + AI CHAT + AI ART + MOD  ║
-║       Server running on port ${PORT}        ║
-║   URL: ${WEBSITE_URL.padEnd(28)}      ║
-║                                          ║
-║  Stats: ${stats.apiCalls} calls, ${todayCount} today, ${totalCount} total    ║
-║  Health: ${healthStatus.summary.online}/${healthStatus.summary.total} online              ║
-║  GitHub Backup: ${githubEnabled ? 'ENABLED ✅' : 'DISABLED ❌'}      ║
-║  Local Backup: ENABLED ✅                ║
-║  Live Updates: ENABLED ✅              ║
-║                                          ║
-║  Endpoints:                              ║
-║  • /download/youtubedl                   ║
-║  • /download/youtubedl2                  ║
-║  • /download/tiktokdl                    ║
-║  • /download/instagramdl                 ║
-║  • /download/textphoto                   ║
-║  • /download/modrithpl  ← NEW! 🔌        ║
-║  • /search/freefire                      ║
-║  • /search/modrithpl    ← NEW! 🔌        ║
-║  • /ai/aichat  ← NEW! 🤖                 ║
-║  • /ai/aiart  ← NEW! 🎨                  ║
-║  • /ai/aiart/json                        ║
-║                                          ║
-║  Health: /health                         ║
-║  Stats:   /stats                         ║
-║  Live:    /stats/stream                  ║
-╚══════════════════════════════════════════╝
+╔═══════════════════════════╗
+║             SRI API V3.0
+║       Server running on port ${PORT}
+║   URL: ${WEBSITE_URL.padEnd(28)}
+║
+║  Stats: ${stats.apiCalls} calls, ${todayCount} today, ${totalCount} total
+║  Health: ${healthStatus.summary.online}/${healthStatus.summary.total} online
+║  GitHub Backup: ${githubEnabled ? 'ENABLED ✅' : 'DISABLED ❌'}
+║  Local Backup: ENABLED ✅
+║  Live Updates: ENABLED ✅
+║
+║  Health: /health
+║  Stats:   /stats
+║  Live:    /stats/stream
+╚═══════════════════════════╝
         `);
     });
 }
