@@ -558,33 +558,40 @@
         ]
     },
     search: {
-        title: "Search",
-        icon: "search",
-        endpoints: [
-            { 
-                name: "Free Fire Player Info", 
-                path: "/search/freefire", 
-                method: "GET", 
-                description: "Retrieve detailed player statistics, clan info, and profile data from Free Fire game.", 
-                params: [
-                    { name: "region", type: "string", required: true, description: "Game server region (e.g., SG, ID, BR, US)", placeholder: "SG" },
-                    { name: "uid", type: "string", required: true, description: "Player unique ID number", placeholder: "2326343985" }
-                ] 
-            },
-            { 
-                name: "Modrinth Plugin Search", 
-                path: "/search/modrithpl", 
-                method: "GET", 
-                description: "Search for Minecraft plugins/mods on Modrinth. Find plugins by name, keyword, or category with detailed results.", 
-                params: [
-                    { name: "query", type: "string", required: true, description: "Search query (plugin name or keyword)", placeholder: "veinminer" },
-                    { name: "limit", type: "number", required: false, description: "Number of results (1-100, default: 20)", placeholder: "20" },
-                    { name: "offset", type: "number", required: false, description: "Offset for pagination", placeholder: "0" },
-                    { name: "sort", type: "string", required: false, description: "Sort by: relevance, downloads, follows, newest, updated", placeholder: "relevance" }
-                ] 
-            }
-        ]
-    },
+    title: "Search",
+    icon: "search",
+    endpoints: [
+        { 
+            name: "Free Fire Player Info", 
+            path: "/search/freefire", 
+            method: "GET", 
+            description: "Retrieve detailed player statistics, clan info, and profile data from Free Fire game.", 
+            params: [
+                { name: "region", type: "string", required: true, description: "Game server region (e.g., SG, ID, BR, US)", placeholder: "SG" },
+                { name: "uid", type: "string", required: true, description: "Player unique ID number", placeholder: "2326343985" }
+            ] 
+        },
+        { 
+            name: "Modrinth Plugin Search", 
+            path: "/search/modrithpl", 
+            method: "GET", 
+            description: "Search for Minecraft plugins/mods on Modrinth.", 
+            params: [
+                { name: "query", type: "string", required: true, description: "Search query", placeholder: "veinminer" }
+            ] 
+        },
+        {  // ⬅️ ADD THIS
+            name: "PornPics Search", 
+            path: "/search/pornpicsearch", 
+            method: "GET", 
+            description: "Search PornPics for galleries, categories, tags, and pornstar pages. Supports search queries and direct URLs.", 
+            params: [
+                { name: "q", type: "string", required: false, description: "Search query (e.g., 'mia khalifa', 'latina')", placeholder: "mia khalifa" },
+                { name: "url", type: "string", required: false, description: "Direct PornPics URL (e.g., https://www.pornpics.com/latina/)", placeholder: "https://www.pornpics.com/latina/" }
+            ] 
+        }
+    ]
+},
     ai: {
         title: "AI",
         icon: "cpu",
