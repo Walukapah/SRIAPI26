@@ -1,4 +1,5 @@
 const https = require('https');
+const http = require('http');
 const { URL } = require('url');
 
 /**
@@ -12,20 +13,22 @@ async function pornpicsearch(query) {
     if (!query || typeof query !== 'string') {
         return {
             success: false,
-            error: 'Please provide a search query or PornPics URL'
+            error: 'Please provide a search query'
         };
     }
 
     let url;
+    // Check if query is a URL (starts with http)
     if (query.startsWith('http')) {
         url = query;
     } else {
+        // It's a search query
         const encodedQuery = encodeURIComponent(query);
         url = `https://www.pornpics.com/?q=${encodedQuery}`;
     }
 
     try {
-        const html = await fetchHtml(url);
+        const html = await fetchHtmlWithRedirects(url);
         const response = buildJsonResponse(url, html, query);
         return {
             success: true,
@@ -42,50 +45,77 @@ async function pornpicsearch(query) {
 }
 
 /**
- * Fetch HTML content from URL
+ * Fetch HTML content from URL with redirect support
+ * Handles HTTP 301/302/307/308 redirects automatically
  */
-function fetchHtml(url) {
+function fetchHtmlWithRedirects(url, maxRedirects = 5) {
     return new Promise((resolve, reject) => {
-        const parsedUrl = new URL(url);
-        const options = {
-            hostname: parsedUrl.hostname,
-            path: parsedUrl.pathname + parsedUrl.search,
-            method: 'GET',
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Referer': 'https://www.pornpics.com/',
-            },
-            timeout: 30000,
-        };
-
-        const req = https.request(options, (res) => {
-            if (res.statusCode !== 200) {
-                reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+        const doRequest = (currentUrl, redirectsLeft) => {
+            if (redirectsLeft <= 0) {
+                reject(new Error('Too many redirects'));
                 return;
             }
 
-            let data = '';
-            res.setEncoding('utf8');
-            res.on('data', (chunk) => {
-                data += chunk;
+            const parsedUrl = new URL(currentUrl);
+            const client = parsedUrl.protocol === 'https:' ? https : http;
+            
+            const options = {
+                hostname: parsedUrl.hostname,
+                path: parsedUrl.pathname + parsedUrl.search,
+                method: 'GET',
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Referer': 'https://www.pornpics.com/',
+                    'Connection': 'keep-alive',
+                },
+                timeout: 30000,
+            };
+
+            const req = client.request(options, (res) => {
+                // Handle redirects (301, 302, 307, 308)
+                if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                    let redirectUrl = res.headers.location;
+                    // Handle relative URLs
+                    if (redirectUrl.startsWith('/')) {
+                        redirectUrl = `${parsedUrl.protocol}//${parsedUrl.hostname}${redirectUrl}`;
+                    } else if (!redirectUrl.startsWith('http')) {
+                        redirectUrl = new URL(redirectUrl, currentUrl).href;
+                    }
+                    console.log(`[PornPics] Redirect ${res.statusCode}: ${currentUrl} -> ${redirectUrl}`);
+                    doRequest(redirectUrl, redirectsLeft - 1);
+                    return;
+                }
+
+                if (res.statusCode !== 200) {
+                    reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+                    return;
+                }
+
+                let data = '';
+                res.setEncoding('utf8');
+                res.on('data', (chunk) => {
+                    data += chunk;
+                });
+                res.on('end', () => {
+                    resolve(data);
+                });
             });
-            res.on('end', () => {
-                resolve(data);
+
+            req.on('error', (err) => {
+                reject(new Error(`Request failed: ${err.message}`));
             });
-        });
 
-        req.on('error', (err) => {
-            reject(new Error(`Request failed: ${err.message}`));
-        });
+            req.on('timeout', () => {
+                req.destroy();
+                reject(new Error('Request timeout'));
+            });
 
-        req.on('timeout', () => {
-            req.destroy();
-            reject(new Error('Request timeout'));
-        });
+            req.end();
+        };
 
-        req.end();
+        doRequest(url, maxRedirects);
     });
 }
 
