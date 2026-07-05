@@ -758,7 +758,7 @@ app.use(['/download', '/search', '/ai'], async (req, res, next) => {
     
     const validEndpoints = ['/youtubedl', '/youtubedl2', '/tiktokdl', 
     '/instagramdl', '/textphoto', '/freefire', '/chatgpt', '/aiart',
-    '/modrithpl', '/pornpicsearch'];  // ⬅️ ADD THIS
+    '/modrithpl', '/pornpicsearch', '/pornpicdl'];  // ⬅️ ADD /pornpicdl
 
     const isValidEndpoint = validEndpoints.some(endpoint => path.includes(endpoint));
 
