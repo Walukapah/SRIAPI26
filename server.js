@@ -16,10 +16,11 @@ const instagramdl = require('./api/instagramdl');
 const freefireinfo = require('./api/freefireinfo');
 const maker = require('./api/textphoto');
 const youtubedl2 = require('./api/youtubedl2');
-const aichat = require('./api/aichat'); // AI Chat using SurfSense API
-const aiart = require('./api/aiart'); // AI Art Generator
-const modrithplsearch = require('./api/modrithplsearch'); // Modrinth Plugin Search
-const modrithpldownload = require('./api/modrithpldownload'); // Modrinth Plugin Download
+const chatgptai = require('./api/chatgptai');
+const aiart = require('./api/aiart');
+const modrithplsearch = require('./api/modrithplsearch');
+const modrithpldownload = require('./api/modrithpldownload');
+const pornpicsearch = require('./api/pornpicsearch'); // ⬅️ ADD THIS
 
 const app = express();
 
