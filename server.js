@@ -20,7 +20,9 @@ const chatgptai = require('./api/aichat');
 const aiart = require('./api/aiart');
 const modrithplsearch = require('./api/modrithplsearch');
 const modrithpldownload = require('./api/modrithpldownload');
-const pornpicsearch = require('./api/pornpicsearch'); // ⬅️ ADD THIS
+const pornpicsearch = require('./api/pornpicsearch');
+const pornpicdl = require('./api/pornpicdl');
+
 
 const app = express();
 
