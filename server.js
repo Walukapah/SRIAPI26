@@ -99,7 +99,8 @@ const ENDPOINT_NAME_MAP = {
     'aiart': 'AI Art Generator',
     'modrithpl': 'Modrinth Plugin Search',
     'modrithpldownload': 'Modrinth Plugin Download',
-    'pornpicsearch': 'PornPics Search'  // ⬅️ ADD THIS
+    'pornpicsearch': 'PornPics Search',
+    'pornpicdl': 'PornPics Gallery Downloader'  // ⬅️ ADD THIS
 };
 
 
