@@ -1309,6 +1309,51 @@ app.get('/search/pornpicsearch', async (req, res) => {
   }
 });
 
+// ============================================
+// PORNPICS GALLERY DOWNLOADER API
+// ============================================
+
+app.get('/download/pornpicdl', async (req, res) => {
+  try {
+    const { url } = req.query;
+    
+    if (!url) {
+      return res.status(400).json({
+        status: false,
+        creator: "WALUKA🇱🇰",
+        message: "Please provide a gallery URL parameter (url)",
+        examples: [
+          "/download/pornpicdl?url=https://www.pornpics.com/galleries/busty-asian-wife-spreads-her-hot-legs-wearing-thin-red-lacy-undies-58142926/",
+          "/download/pornpicdl?url=https://www.pornpics.com/galleries/teen-babe-with-small-tits-posing-naked-12345678/"
+        ]
+      });
+    }
+
+    const result = await pornpicdl(url);
+
+    if (result.success) {
+      res.json({
+        status: true,
+        creator: "WALUKA🇱🇰",
+        result: result
+      });
+    } else {
+      res.status(500).json({
+        status: false,
+        creator: "WALUKA🇱🇰",
+        message: result.error
+      });
+    }
+
+  } catch (error) {
+    console.error('PornPics Gallery API Error:', error);
+    res.status(500).json({
+      status: false,
+      creator: "WALUKA🇱🇰",
+      message: error.message
+    });
+  }
+});
 
 
 // ============================================
@@ -1336,6 +1381,7 @@ app.use((req, res) => {
       "/download/instagramdl",
       "/download/textphoto",
       "/download/modrithpl",
+      "/download/pornpicdl",        // ⬅️ ADD THIS
       "/search/freefire",
       "/search/modrithpl",
       "/search/pornpicsearch",
@@ -1345,6 +1391,7 @@ app.use((req, res) => {
     ]
   });
 });
+
 
 app.use((err, req, res, next) => {
   console.error('Server Error:', err);
