@@ -11,7 +11,7 @@ const { Octokit } = require('@octokit/rest');
 const crypto = require('crypto');
 
 // Import API configuration
-const { apis, specialEndpoints, healthCheckEndpoints, endpointNameMap, validEndpoints, getApiDataForFrontend } = require('./api');
+const { apis, specialEndpoints, healthCheckEndpoints, endpointNameMap, validEndpoints } = require('./api');
 
 // Dynamically import API handlers
 const handlers = {};
@@ -832,18 +832,6 @@ app.get('/health/status', (req, res) => {
         endpoints: healthStatus.endpoints,
         githubBackup: githubEnabled,
         websiteUrl: WEBSITE_URL
-    });
-});
-
-// ============================================
-// API DATA ENDPOINT - For Frontend
-// ============================================
-
-app.get('/api/data', (req, res) => {
-    res.json({
-        status: true,
-        creator: "WALUKA🇱🇰",
-        data: getApiDataForFrontend()
     });
 });
 
