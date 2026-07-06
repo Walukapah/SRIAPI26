@@ -495,141 +495,55 @@
         // ============================================
         // API DATA - Added AI Art Generator
         // ============================================
-        const apiData = {
-    download: {
-    title: "Download",
-    icon: "download",
-    endpoints: [
-        { 
-            name: "YouTube Downloader", 
-            path: "/download/youtubedl", 
-            method: "GET", 
-            description: "Download YouTube videos in multiple formats and qualities using ytsave.to API integration.", 
-            params: [
-                { name: "url", type: "string", required: true, description: "YouTube video URL (youtube.com or youtu.be)", placeholder: "https://youtube.com/watch?v=dQw4w9WgXcQ" }
-            ] 
-        },
-        { 
-            name: "YouTube Downloader V2", 
-            path: "/download/youtubedl2", 
-            method: "GET", 
-            description: "Alternative YouTube downloader using ytdown.to API with enhanced format support.", 
-            params: [
-                { name: "url", type: "string", required: true, description: "YouTube video URL", placeholder: "https://youtube.com/watch?v=dQw4w9WgXcQ" }
-            ] 
-        },
-        { 
-            name: "TikTok Downloader", 
-            path: "/download/tiktokdl", 
-            method: "GET", 
-            description: "Download TikTok videos without watermark, with metadata and music extraction support.", 
-            params: [
-                { name: "url", type: "string", required: true, description: "TikTok video URL (tiktok.com or vm.tiktok.com)", placeholder: "https://vt.tiktok.com/ZSuYLQkMm/" }
-            ] 
-        },
-        { 
-            name: "Instagram Downloader", 
-            path: "/download/instagramdl", 
-            method: "GET", 
-            description: "Download Instagram videos, reels, and images with thumbnail extraction.", 
-            params: [
-                { name: "url", type: "string", required: true, description: "Instagram post/reel URL", placeholder: "https://www.instagram.com/reel/DKR-FW1yo_p/" }
-            ] 
-        },
-        { 
-            name: "Text to Photo", 
-            path: "/download/textphoto", 
-            method: "GET", 
-            description: "Generate stylized text images using ephoto360, photooxy, and textpro templates.", 
-            params: [
-                { name: "url", type: "string", required: true, description: "Template URL from ephoto360.com, photooxy.com, or textpro.me", placeholder: "https://textpro.me/create-naruto-logo-style-text-effect-online-1125.html" },
-                { name: "text", type: "string", required: true, description: "First text parameter", placeholder: "SRI API W" }
-            ] 
-        },
-        { 
-            name: "Modrinth Plugin Download", 
-            path: "/download/modrithpl", 
-            method: "GET", 
-            description: "Get full plugin details and all download links from Modrinth. Supports URLs, project IDs, and slugs. Returns all versions with direct download links.", 
-            params: [
-                { name: "url", type: "string", required: true, description: "Modrinth plugin URL, project ID, or slug", placeholder: "https://modrinth.com/plugin/veinminer" }
-            ] 
-        },
-        {   // ⬅️ ADD THIS
-            name: "PornPics Gallery Downloader", 
-            path: "/download/pornpicdl", 
-            method: "GET", 
-            description: "Scrape and download gallery images from PornPics. Extracts all full-size images, thumbnails, gallery info (title, models, categories, tags, stats), and metadata.", 
-            params: [
-                { name: "url", type: "string", required: true, description: "PornPics gallery URL", placeholder: "https://www.pornpics.com/galleries/busty-asian-wife-spreads-her-hot-legs-wearing-thin-red-lacy-undies-58142926/" }
-            ] 
-        }
-    ]
-},
-    search: {
-    title: "Search",
-    icon: "search",
-    endpoints: [
-        { 
-            name: "Free Fire Player Info", 
-            path: "/search/freefire", 
-            method: "GET", 
-            description: "Retrieve detailed player statistics, clan info, and profile data from Free Fire game.", 
-            params: [
-                { name: "region", type: "string", required: true, description: "Game server region (e.g., SG, ID, BR, US)", placeholder: "SG" },
-                { name: "uid", type: "string", required: true, description: "Player unique ID number", placeholder: "2326343985" }
-            ] 
-        },
-        { 
-            name: "Modrinth Plugin Search", 
-            path: "/search/modrithpl", 
-            method: "GET", 
-            description: "Search for Minecraft plugins/mods on Modrinth.", 
-            params: [
-                { name: "query", type: "string", required: true, description: "Search query", placeholder: "veinminer" }
-            ] 
-        },
-        {  // ⬅️ ADD THIS
-            name: "PornPics Search", 
-            path: "/search/pornpicsearch", 
-            method: "GET", 
-            description: "Search PornPics for galleries, categories, tags, and pornstar pages. Supports search queries and direct URLs.", 
-            params: [
-                { name: "q", type: "string", required: false, description: "Search query (e.g., 'mia khalifa', 'latina')", placeholder: "mia khalifa" }
-            ] 
-        }
-    ]
-},
-    ai: {
-        title: "AI",
-        icon: "cpu",
-        endpoints: [
-            { 
-                name: "AI Chat", 
-                path: "/ai/aichat", 
-                method: "GET", 
-                description: "Advanced AI chat powered by GPT-5.4-mini via SurfSense API. Get intelligent responses to any question or prompt.", 
-                params: [
-                    { name: "prompt", type: "string", required: true, description: "Your message or question to the AI", placeholder: "Hello, how are you?" }
-                ]
-            },
-            { 
-                name: "AI Art Generator", 
-                path: "/ai/aiart", 
-                method: "GET", 
-                description: "Generate AI art images using MagicStudio. Creates beautiful images from text prompts with high quality rendering.", 
-                params: [
-                    { name: "prompt", type: "string", required: true, description: "Text description of the image you want to generate", placeholder: "a dragon sitting on castle wall at sunset" },
-                    { name: "format", type: "string", required: false, description: "Response format: 'image' for direct image, 'json' for base64 JSON", placeholder: "json" }
-                ] 
-            }
-        ]
-    }
-};
-
-
-
+        const BACKEND_URL = window.location.origin;
+        let apiData = {}; // Will be populated from /api/data endpoint
         let currentCategory = null, currentEndpoint = null, currentResponse = null, currentTab = 'curl', sidebarSearchQuery = '', isShowingAllApis = false;
+
+        // ============================================
+        // FETCH API DATA FROM BACKEND
+        // ============================================
+
+        async function loadApiData() {
+            try {
+                console.log('[API DATA] Fetching from backend...');
+                const response = await fetch(`${BACKEND_URL}/api/data`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const result = await response.json();
+                if (result.status && result.data) {
+                    apiData = result.data;
+                    console.log('[API DATA] Loaded successfully:', Object.keys(apiData));
+                    // Initialize the UI after data is loaded
+                    initializeUI();
+                    return true;
+                } else {
+                    throw new Error('Invalid response format');
+                }
+            } catch (error) {
+                console.error('[API DATA] Failed to load:', error.message);
+                // Show error in UI
+                document.getElementById('homeSection').innerHTML = `
+                    <div style="text-align: center; padding: 100px 24px;">
+                        <div style="font-size: 48px; margin-bottom: 24px;">⚠️</div>
+                        <h2 style="font-size: 24px; font-weight: 700; margin-bottom: 16px;">Failed to Load API Data</h2>
+                        <p style="color: var(--text-secondary); margin-bottom: 24px;">${error.message}</p>
+                        <button class="btn btn-primary" onclick="location.reload()">Retry</button>
+                    </div>
+                `;
+                return false;
+            }
+        }
+
+        function initializeUI() {
+            renderSidebar();
+            setupKeyboardShortcuts();
+            setupHomeSearch();
+            trackVisitorOnPageLoad();
+            liveStats.connect();
+            loadHealthStatusFromBackend();
+        }
+let currentCategory = null, currentEndpoint = null, currentResponse = null, currentTab = 'curl', sidebarSearchQuery = '', isShowingAllApis = false;
 
         // ============================================
         // LIVE STATS SYSTEM - Real-time Updates
