@@ -1,4 +1,5 @@
 // server.js - Koyeb Optimized with AI Art Support + Modrinth Plugin APIs
+// API Registration System - Add APIs in api.js file only!
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -9,20 +10,26 @@ const fs = require('fs');
 const { Octokit } = require('@octokit/rest');
 const crypto = require('crypto');
 
-// Import API modules from api/ folder
-const youtubedl = require('./api/youtubedl');
-const tiktokdl = require('./api/tiktokdl');
-const instagramdl = require('./api/instagramdl');
-const freefireinfo = require('./api/freefireinfo');
-const maker = require('./api/textphoto');
-const youtubedl2 = require('./api/youtubedl2');
-const chatgptai = require('./api/aichat');
-const aiart = require('./api/aiart');
-const modrithplsearch = require('./api/modrithplsearch');
-const modrithpldownload = require('./api/modrithpldownload');
-const pornpicsearch = require('./api/pornpicsearch');
-const pornpicdl = require('./api/pornpicdl');
+// Import API configuration
+const { apis, specialEndpoints, healthCheckEndpoints, endpointNameMap, validEndpoints } = require('./api');
 
+// Dynamically import API handlers
+const handlers = {};
+const handlerModules = {};
+
+// Load all unique handlers
+const loadedPaths = new Set();
+apis.forEach(api => {
+    if (!loadedPaths.has(api.importPath)) {
+        try {
+            handlerModules[api.handler] = require(api.importPath);
+            loadedPaths.add(api.importPath);
+            console.log(`[API] Loaded handler: ${api.handler} from ${api.importPath}`);
+        } catch (e) {
+            console.error(`[API] Failed to load handler ${api.handler}:`, e.message);
+        }
+    }
+});
 
 const app = express();
 
@@ -85,24 +92,11 @@ const STATS_FILE = 'api_stats1.json';
 const HEALTH_FILE = 'api_health.json';
 
 // ============================================
-// ENDPOINT NAME MAPPING - Added modrinth
+// ENDPOINT NAME MAPPING - Auto from api.js
 // ============================================
 
-const ENDPOINT_NAME_MAP = {
-    'youtubedl': 'YouTube Downloader',
-    'youtubedl2': 'YouTube Downloader V2',
-    'tiktokdl': 'TikTok Downloader',
-    'instagramdl': 'Instagram Downloader',
-    'textphoto': 'Text to Photo',
-    'freefire': 'Free Fire Player Info',
-    'chatgpt': 'ChatGPT AI Chat',
-    'aiart': 'AI Art Generator',
-    'modrithpl': 'Modrinth Plugin Search',
-    'modrithpldownload': 'Modrinth Plugin Download',
-    'pornpicsearch': 'PornPics Search',
-    'pornpicdl': 'PornPics Gallery Downloader'  // ⬅️ ADD THIS
-};
-
+const ENDPOINT_NAME_MAP = endpointNameMap;
+const ENDPOINTS_TO_CHECK = healthCheckEndpoints;
 
 function getEndpointName(path) {
     const parts = path.split('/').filter(p => p);
@@ -222,7 +216,7 @@ function broadcastStatsUpdate() {
 }
 
 // ============================================
-// HEALTH CHECK SYSTEM - Added Modrinth
+// HEALTH CHECK SYSTEM - Auto from api.js
 // ============================================
 
 let healthStatus = {
@@ -232,22 +226,6 @@ let healthStatus = {
     endpoints: {},
     summary: { online: 0, offline: 0, total: 0 }
 };
-
-const ENDPOINTS_TO_CHECK = [
-    { name: 'YouTube Downloader', path: '/download/youtubedl', method: 'GET', testParams: { url: 'https://youtube.com/watch?v=dQw4w9WgXcQ' } },
-    { name: 'YouTube Downloader V2', path: '/download/youtubedl2', method: 'GET', testParams: { url: 'https://youtube.com/watch?v=dQw4w9WgXcQ' } },
-    { name: 'TikTok Downloader', path: '/download/tiktokdl', method: 'GET', testParams: { url: 'https://vt.tiktok.com/ZSuYLQkMm/' } },
-    { name: 'Instagram Downloader', path: '/download/instagramdl', method: 'GET', testParams: { url: 'https://www.instagram.com/reel/DKR-FW1yo_p/' } },
-    { name: 'Text to Photo', path: '/download/textphoto', method: 'GET', testParams: { url: 'https://textpro.me/create-naruto-logo-style-text-effect-online-1125.html', text: 'Test' } },
-    { name: 'Free Fire Player Info', path: '/search/freefire', method: 'GET', testParams: { region: 'SG', uid: '2326343985' } },
-    { name: 'AI Chat', path: '/ai/aichat', method: 'GET', testParams: { prompt: 'Hello' } },
-    { name: 'AI Art Generator', path: '/ai/aiart', method: 'GET', testParams: { prompt: 'a beautiful sunset', format: 'json' } },
-    { name: 'Modrinth Plugin Search', path: '/search/modrithpl', method: 'GET', testParams: { query: 'veinminer' } },
-    { name: 'Modrinth Plugin Download', path: '/download/modrithpl', method: 'GET', testParams: { url: 'https://modrinth.com/plugin/veinminer' } },
-    { name: 'PornPics Search', path: '/search/pornpicsearch', method: 'GET', testParams: { q: 'latina' } },
-    { name: 'PornPics Gallery Downloader', path: '/download/pornpicdl', method: 'GET', testParams: { url: 'https://www.pornpics.com/galleries/busty-asian-wife-spreads-her-hot-legs-wearing-thin-red-lacy-undies-58142926/' } }  // ⬅️ ADD THIS
-];
-
 
 // ============================================
 // GITHUB FUNCTIONS (Same as original)
@@ -750,17 +728,15 @@ app.use('/search', limiter);
 app.use('/ai', limiter);
 
 // ============================================
-// API CALL TRACKING MIDDLEWARE
+// API CALL TRACKING MIDDLEWARE - Auto from api.js
 // ============================================
+
+const VALID_ENDPOINTS = validEndpoints;
 
 app.use(['/download', '/search', '/ai'], async (req, res, next) => {
     const path = req.path;
-    
-    const validEndpoints = ['/youtubedl', '/youtubedl2', '/tiktokdl', 
-    '/instagramdl', '/textphoto', '/freefire', '/chatgpt', '/aiart',
-    '/modrithpl', '/pornpicsearch', '/pornpicdl'];  // ⬅️ ADD /pornpicdl
 
-    const isValidEndpoint = validEndpoints.some(endpoint => path.includes(endpoint));
+    const isValidEndpoint = VALID_ENDPOINTS.some(endpoint => path.includes(endpoint));
 
     if (isValidEndpoint) {
         const endpointName = getEndpointName(path);
@@ -953,408 +929,140 @@ app.post('/health/check', async (req, res) => {
 });
 
 // ============================================
-// API ROUTES - Original Endpoints
+// AUTO-GENERATED API ROUTES from api.js
 // ============================================
 
-app.get('/download/youtubedl', async (req, res) => {
-  try {
-    const url = req.query.url;
-    if (!url || (!url.includes('youtube.com') && !url.includes('youtu.be'))) {
-      return res.status(400).json({ status: false, message: "Please provide a valid YouTube URL" });
-    }
-    const youtubeData = await youtubedl(url);
-    res.json({ status: true, creator: "WALUKA🇱🇰", result: youtubeData });
-  } catch (error) {
-    console.error('API Error:', error);
-    res.status(500).json({ status: false, message: error.message });
-  }
-});
+// Generate routes for each API
+apis.forEach(api => {
+    if (api.isImageEndpoint) {
+        // Special handling for image endpoints (like AI Art)
+        app.get(api.path, async (req, res) => {
+            try {
+                const validation = api.validate ? api.validate(req) : null;
+                if (validation) {
+                    return res.status(400).json(validation);
+                }
 
-app.get('/download/youtubedl2', async (req, res) => {
-  try {
-    const url = req.query.url;
-    if (!url || !url.includes('youtu')) {
-      return res.status(400).json({ status: false, message: "Please provide a valid YouTube URL" });
-    }
-    const youtubeData = await youtubedl2(url);
-    res.json({ status: true, creator: "WALUKA🇱🇰", result: youtubeData });
-  } catch (error) {
-    console.error('API Error:', error);
-    res.status(500).json({ status: false, message: error.message });
-  }
-});
+                const format = req.query.format || 'image';
+                const result = await handlerModules[api.handler](...api.params.map(p => req.query[p.name]));
 
-app.get('/download/tiktokdl', async (req, res) => {
-  try {
-    if (!req.query.url) {
-      return res.status(400).json({ success: false, message: "Please provide a valid Tiktok URL" });
-    }
-    const tiktokData = await tiktokdl(req.query.url);
-    res.json({ status: true, creator: "WALUKA🇱🇰", result: tiktokData });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+                if (!result.success) {
+                    return res.status(500).json({
+                        status: false,
+                        creator: "WALUKA🇱🇰",
+                        message: result.message || result.error
+                    });
+                }
 
-app.get('/download/instagramdl', async (req, res) => {
-  try {
-    if (!req.query.url) {
-      return res.status(400).json({ success: false, message: "Please provide a valid Instagram URL" });
-    }
-    const instagramData = await instagramdl(req.query.url);
-    res.json({ status: true, creator: "WALUKA🇱🇰", result: instagramData });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+                if (format === 'json') {
+                    return res.json(api.transformResponse(result, 'json'));
+                }
 
-app.get('/search/freefire', async (req, res) => {
-  try {
-    const { region, uid } = req.query;
-    if (!region || !uid) {
-      return res.status(400).json({ status: false, message: "Please provide both region and uid parameters" });
-    }
-    const playerData = await freefireinfo(region, uid);
-    res.json({ status: true, creator: "WALUKA🇱🇰", result: playerData });
-  } catch (error) {
-    console.error('API Error:', error);
-    res.status(500).json({ status: false, message: error.message });
-  }
-});
+                if (result.buffer) {
+                    res.setHeader('Content-Type', 'image/jpeg');
+                    res.setHeader('Content-Length', result.size);
+                    res.setHeader('Cache-Control', 'public, max-age=3600');
+                    return res.end(result.buffer);
+                }
 
-app.get('/download/textphoto', async (req, res) => {
-  try {
-    const { url, text } = req.query;
-    if (!url) {
-      return res.status(400).json({ status: false, message: "Please provide a URL parameter" });
-    }
-    if (!text) {
-      return res.status(400).json({ status: false, message: "Please provide a text parameter" });
-    }
-    const result = await maker(url, text);
-    res.json({ status: true, creator: "WALUKA🇱🇰", result: result });
-  } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
-  }
-});
-
-app.get('/ai/aichat', async (req, res) => {
-  try {
-    const { prompt } = req.query;
-    if (!prompt) {
-      return res.status(400).json({ 
-        status: false, 
-        message: "Please provide a prompt parameter" 
-      });
-    }
-    const result = await aichat(prompt);
-    if (result.success) {
-      res.json({ 
-        status: true, 
-        creator: "WALUKA🇱🇰", 
-        result: {
-          query: prompt,
-          response: result.response,
-          model: result.model,
-          messageId: result.messageId,
-          usage: result.usage,
-          quota: result.quota
-        }
-      });
+                res.json(api.transformResponse(result));
+            } catch (error) {
+                console.error(`${api.name} API Error:`, error);
+                res.status(500).json({ 
+                    status: false, 
+                    message: error.message 
+                });
+            }
+        });
     } else {
-      res.status(result.statusCode || 500).json({ 
-        status: false, 
-        message: result.error 
-      });
-    }
-  } catch (error) {
-    console.error('API Error:', error);
-    res.status(500).json({ 
-      status: false, 
-      message: error.message 
-    });
-  }
-});
+        // Standard JSON endpoints
+        app.get(api.path, async (req, res) => {
+            try {
+                const validation = api.validate ? api.validate(req) : null;
+                if (validation) {
+                    return res.status(400).json(validation);
+                }
 
-// ============================================
-// AI ART ENDPOINTS - MagicStudio Integration
-// ============================================
+                // Call handler with parameters
+                let handlerResult;
+                if (api.handler === 'modrithpldownload') {
+                    const id = req.query.url || req.query.id || req.query.slug || req.query.project;
+                    handlerResult = await handlerModules[api.handler](id);
+                } else if (api.handler === 'modrithplsearch') {
+                    const q = req.query.query || req.query.q;
+                    handlerResult = await handlerModules[api.handler](q, req.query.limit, req.query.offset, req.query.sort);
+                } else if (api.handler === 'chatgptai') {
+                    handlerResult = await handlerModules[api.handler](req.query.prompt);
+                } else if (api.handler === 'maker') {
+                    handlerResult = await handlerModules[api.handler](req.query.url, req.query.text);
+                } else {
+                    // Default: pass first param
+                    const firstParam = api.params[0] ? req.query[api.params[0].name] : undefined;
+                    if (firstParam !== undefined) {
+                        handlerResult = await handlerModules[api.handler](firstParam);
+                    } else {
+                        handlerResult = await handlerModules[api.handler]();
+                    }
+                }
 
-app.get('/ai/aiart', async (req, res) => {
-  try {
-    const { prompt, format } = req.query;
+                const response = api.transformResponse ? api.transformResponse(handlerResult) : handlerResult;
 
-    if (!prompt) {
-      return res.status(400).json({ 
-        status: false, 
-        message: "Please provide a prompt parameter" 
-      });
-    }
+                // Handle error responses
+                if (response.status === false || (handlerResult && handlerResult.success === false)) {
+                    const statusCode = handlerResult.statusCode || 500;
+                    return res.status(statusCode).json(response);
+                }
 
-    const result = await aiart(prompt, format || 'image');
-
-    if (!result.success) {
-      return res.status(500).json({
-        status: false,
-        creator: "WALUKA🇱🇰",
-        message: result.message || result.error
-      });
-    }
-
-    if (format === 'json') {
-      return res.json({
-        status: true,
-        creator: "WALUKA🇱🇰",
-        result: result.result
-      });
-    }
-
-    if (result.buffer) {
-      res.setHeader('Content-Type', 'image/jpeg');
-      res.setHeader('Content-Length', result.size);
-      res.setHeader('Cache-Control', 'public, max-age=3600');
-      return res.end(result.buffer);
-    }
-
-    res.json({
-      status: true,
-      creator: "WALUKA🇱🇰",
-      result: result.result
-    });
-
-  } catch (error) {
-    console.error('AI Art API Error:', error);
-    res.status(500).json({ 
-      status: false, 
-      message: error.message 
-    });
-  }
-});
-
-app.get('/ai/aiart/json', async (req, res) => {
-  try {
-    const { prompt } = req.query;
-
-    if (!prompt) {
-      return res.status(400).json({ 
-        status: false, 
-        message: "Please provide a prompt parameter" 
-      });
-    }
-
-    const result = await aiart(prompt, 'json');
-
-    if (result.success) {
-      res.json({
-        status: true,
-        creator: "WALUKA🇱🇰",
-        result: result.result
-      });
-    } else {
-      res.status(500).json({
-        status: false,
-        message: result.message || result.error
-      });
-    }
-
-  } catch (error) {
-    console.error('AI Art JSON API Error:', error);
-    res.status(500).json({ 
-      status: false, 
-      message: error.message 
-    });
-  }
-});
-
-// ============================================
-// MODRINTH PLUGIN SEARCH API
-// ============================================
-
-app.get('/search/modrithpl', async (req, res) => {
-    try {
-        const { query, q, limit, offset, sort } = req.query;
-        const searchQuery = query || q;
-
-        if (!searchQuery) {
-            return res.status(400).json({
-                status: false,
-                creator: "WALUKA🇱🇰",
-                message: "Please provide a search query (use ?query= or ?q= parameter)"
-            });
-        }
-
-        const result = await modrithplsearch(
-            searchQuery,
-            limit,
-            offset,
-            sort
-        );
-
-        if (result.success) {
-            res.json({
-                status: true,
-                creator: "WALUKA🇱🇰",
-                result: result
-            });
-        } else {
-            res.status(500).json({
-                status: false,
-                creator: "WALUKA🇱🇰",
-                message: result.error
-            });
-        }
-
-    } catch (error) {
-        console.error('Modrinth Search API Error:', error);
-        res.status(500).json({
-            status: false,
-            creator: "WALUKA🇱🇰",
-            message: error.message
+                res.json(response);
+            } catch (error) {
+                console.error(`${api.name} API Error:`, error);
+                res.status(500).json({ 
+                    status: false, 
+                    message: error.message 
+                });
+            }
         });
     }
+
+    console.log(`[ROUTES] Registered: ${api.method} ${api.path} -> ${api.name}`);
 });
 
-// ============================================
-// MODRINTH PLUGIN DOWNLOAD/DETAILS API
-// ============================================
+// Special endpoints
+Object.values(specialEndpoints).forEach(special => {
+    const parentApi = apis.find(a => a.path === special.parentPath);
+    if (parentApi) {
+        app.get(special.path, async (req, res) => {
+            try {
+                const validation = parentApi.validate ? parentApi.validate(req) : null;
+                if (validation) {
+                    return res.status(400).json(validation);
+                }
 
-app.get('/download/modrithpl', async (req, res) => {
-    try {
-        const { url, id, slug, project } = req.query;
-        const identifier = url || id || slug || project;
+                const result = await handlerModules[parentApi.handler](req.query.prompt, 'json');
 
-        if (!identifier) {
-            return res.status(400).json({
-                status: false,
-                creator: "WALUKA🇱🇰",
-                message: "Please provide a plugin identifier. Use ?url=, ?id=, ?slug=, or ?project=",
-                examples: [
-                    "/download/modrithpl?url=https://modrinth.com/plugin/veinminer",
-                    "/download/modrithpl?id=OhduvhIc",
-                    "/download/modrithpl?slug=veinminer"
-                ]
-            });
-        }
-
-        const result = await modrithpldownload(identifier);
-
-        if (result.success) {
-            res.json({
-                status: true,
-                creator: "WALUKA🇱🇰",
-                result: result
-            });
-        } else {
-            res.status(404).json({
-                status: false,
-                creator: "WALUKA🇱🇰",
-                message: result.error
-            });
-        }
-
-    } catch (error) {
-        console.error('Modrinth Download API Error:', error);
-        res.status(500).json({
-            status: false,
-            creator: "WALUKA🇱🇰",
-            message: error.message
+                if (result.success) {
+                    res.json({
+                        status: true,
+                        creator: "WALUKA🇱🇰",
+                        result: result.result
+                    });
+                } else {
+                    res.status(500).json({
+                        status: false,
+                        message: result.message || result.error
+                    });
+                }
+            } catch (error) {
+                console.error(`${special.description} API Error:`, error);
+                res.status(500).json({ 
+                    status: false, 
+                    message: error.message 
+                });
+            }
         });
+        console.log(`[ROUTES] Registered: ${special.method} ${special.path} -> ${special.description}`);
     }
 });
-
-// ============================================
-// PORNPICS SEARCH API - q parameter only
-// ============================================
-
-app.get('/search/pornpicsearch', async (req, res) => {
-  try {
-    const { q } = req.query;
-    
-    if (!q) {
-      return res.status(400).json({
-        status: false,
-        creator: "WALUKA🇱🇰",
-        message: "Please provide a query parameter (q)",
-        examples: [
-          "/search/pornpicsearch?q=latina",
-          "/search/pornpicsearch?q=mia+khalifa",
-          "/search/pornpicsearch?q=https://www.pornpics.com/latina/"
-        ]
-      });
-    }
-
-    const result = await pornpicsearch(q);
-
-    if (result.success) {
-      res.json({
-        status: true,
-        creator: "WALUKA🇱🇰",
-        result: result.result
-      });
-    } else {
-      res.status(500).json({
-        status: false,
-        creator: "WALUKA🇱🇰",
-        message: result.error
-      });
-    }
-
-  } catch (error) {
-    console.error('PornPics Search API Error:', error);
-    res.status(500).json({
-      status: false,
-      creator: "WALUKA🇱🇰",
-      message: error.message
-    });
-  }
-});
-
-// ============================================
-// PORNPICS GALLERY DOWNLOADER API
-// ============================================
-
-app.get('/download/pornpicdl', async (req, res) => {
-  try {
-    const { url } = req.query;
-    
-    if (!url) {
-      return res.status(400).json({
-        status: false,
-        creator: "WALUKA🇱🇰",
-        message: "Please provide a gallery URL parameter (url)",
-        examples: [
-          "/download/pornpicdl?url=https://www.pornpics.com/galleries/busty-asian-wife-spreads-her-hot-legs-wearing-thin-red-lacy-undies-58142926/",
-          "/download/pornpicdl?url=https://www.pornpics.com/galleries/teen-babe-with-small-tits-posing-naked-12345678/"
-        ]
-      });
-    }
-
-    const result = await pornpicdl(url);
-
-    if (result.success) {
-      res.json({
-        status: true,
-        creator: "WALUKA🇱🇰",
-        result: result
-      });
-    } else {
-      res.status(500).json({
-        status: false,
-        creator: "WALUKA🇱🇰",
-        message: result.error
-      });
-    }
-
-  } catch (error) {
-    console.error('PornPics Gallery API Error:', error);
-    res.status(500).json({
-      status: false,
-      creator: "WALUKA🇱🇰",
-      message: error.message
-    });
-  }
-});
-
 
 // ============================================
 // STATIC FILES
@@ -1367,31 +1075,20 @@ app.get('/', (req, res) => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ============================================
-// ERROR HANDLING - Added modrinth endpoints
+// ERROR HANDLING - Auto from api.js
 // ============================================
 
 app.use((req, res) => {
-  res.status(404).json({
-    status: false,
-    message: "Endpoint not found",
-    availableEndpoints: [
-      "/download/youtubedl",
-      "/download/youtubedl2", 
-      "/download/tiktokdl",
-      "/download/instagramdl",
-      "/download/textphoto",
-      "/download/modrithpl",
-      "/download/pornpicdl",        // ⬅️ ADD THIS
-      "/search/freefire",
-      "/search/modrithpl",
-      "/search/pornpicsearch",
-      "/ai/aichat",
-      "/ai/aiart",
-      "/ai/aiart/json"
-    ]
-  });
-});
+    const availableEndpoints = apis.map(api => api.path);
+    // Add special endpoints
+    Object.values(specialEndpoints).forEach(s => availableEndpoints.push(s.path));
 
+    res.status(404).json({
+        status: false,
+        message: "Endpoint not found",
+        availableEndpoints: [...new Set(availableEndpoints)]
+    });
+});
 
 app.use((err, req, res, next) => {
   console.error('Server Error:', err);
@@ -1403,14 +1100,15 @@ app.use((err, req, res, next) => {
 });
 
 // ============================================
-// START SERVER - Added Modrinth APIs
+// START SERVER
 // ============================================
 
 const PORT = process.env.PORT || 3000;
 
 async function startServer() {
-    console.log('[STARTUP] Starting SRI API V3.0 with AI Chat + AI Art + Modrinth Support...');
+    console.log('[STARTUP] Starting SRI API V3.0 with Auto-Registration System...');
     console.log(`[CONFIG] Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`[CONFIG] Registered APIs: ${apis.length}`);
 
     const githubLoaded = await loadStatsFromGitHub();
     if (!githubLoaded) loadStatsFromLocal();
@@ -1446,6 +1144,8 @@ async function startServer() {
 ║  GitHub Backup: ${githubEnabled ? 'ENABLED ✅' : 'DISABLED ❌'}
 ║  Local Backup: ENABLED ✅
 ║  Live Updates: ENABLED ✅
+║  Auto-Register: ENABLED ✅
+║  APIs: ${apis.length} registered
 ║
 ║  Health: /health
 ║  Stats:   /stats
