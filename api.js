@@ -258,7 +258,6 @@ const apis = [
             if (format === 'json') {
                 return { status: true, creator: "WALUKA🇱🇰", result: data.result };
             }
-            // For image format, return special marker
             return { __IMAGE_RESPONSE__: true, buffer: data.buffer, size: data.size, result: data.result };
         }
     }
@@ -315,10 +314,41 @@ const validEndpoints = [
     '/pornpicsearch', '/pornpicdl'
 ];
 
+// Categories configuration for frontend
+const categories = {
+    download: { title: "Download", icon: "download", order: 1 },
+    search: { title: "Search", icon: "search", order: 2 },
+    ai: { title: "AI", icon: "cpu", order: 3 }
+};
+
+// Get API data for frontend (without handler functions)
+function getApiDataForFrontend() {
+    const data = {};
+    apis.forEach(api => {
+        if (!data[api.category]) {
+            data[api.category] = {
+                title: categories[api.category]?.title || api.category,
+                icon: categories[api.category]?.icon || "zap",
+                endpoints: []
+            };
+        }
+        data[api.category].endpoints.push({
+            name: api.name,
+            path: api.path,
+            method: api.method,
+            description: api.description,
+            params: api.params || []
+        });
+    });
+    return data;
+}
+
 module.exports = {
     apis,
     specialEndpoints,
     healthCheckEndpoints,
     endpointNameMap,
-    validEndpoints
+    validEndpoints,
+    categories,
+    getApiDataForFrontend
 };
