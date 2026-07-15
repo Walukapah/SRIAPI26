@@ -145,7 +145,7 @@ const apis = [
         category: "download",
         description: "Download PornHub videos with metadata, HLS streams, and multiple quality options.",
         params: [
-            { name: "url", type: "string", required: true, description: "PornHub video URL", placeholder: "https://www.pornhub.com/view_video.php?viewkey=ph5f8a2b1c3d4e5" }
+            { name: "url", type: "string", required: true, description: "PornHub video URL", placeholder: "https://www.pornhub.com/view_video.php?viewkey=ph5eb756841757e" }
         ],
         handler: "phubdl",
         importPath: "./api/phub",
@@ -308,7 +308,7 @@ const healthCheckEndpoints = [
     { name: 'Modrinth Plugin Download', path: '/download/modrithpl', method: 'GET', testParams: { url: 'https://modrinth.com/plugin/veinminer' } },
     { name: 'PornPics Search', path: '/search/pornpicsearch', method: 'GET', testParams: { q: 'latina' } },
     { name: 'PornPics Gallery Downloader', path: '/download/pornpicdl', method: 'GET', testParams: { url: 'https://www.pornpics.com/galleries/busty-asian-wife-spreads-her-hot-legs-wearing-thin-red-lacy-undies-58142926/' } },
-    { name: 'PornHub Video Downloader', path: '/download/phubdl', method: 'GET', testParams: { url: 'https://www.pornhub.com/view_video.php?viewkey=ph5f8a2b1c3d4e5' } }
+    { name: 'PornHub Video Downloader', path: '/download/phubdl', method: 'GET', testParams: { url: 'https://www.pornhub.com/view_video.php?viewkey=ph5eb756841757e' } }
 ];
 
 // Endpoint name mapping for stats
