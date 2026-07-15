@@ -138,25 +138,26 @@ const apis = [
         },
         transformResponse: (data) => ({ status: true, creator: "WALUKA🇱🇰", result: data })
     },
-    {
-        name: "PornHub Video Downloader",
-        path: "/download/phubdl",
-        method: "GET",
-        category: "download",
-        description: "Download PornHub videos with metadata, HLS streams, and multiple quality options.",
-        params: [
-            { name: "url", type: "string", required: true, description: "PornHub video URL", placeholder: "https://www.pornhub.com/view_video.php?viewkey=ph5eb756841757e" }
-        ],
-        handler: "phubdl",
-        importPath: "./api/phub",
-        validate: (req) => {
-            if (!req.query.url) {
-                return { status: false, creator: "WALUKA🇱🇰", message: "Please provide a video URL parameter (url)" };
-            }
-            return null;
-        },
-        transformResponse: (data) => ({ status: true, creator: "WALUKA🇱🇰", result: data })
+// api.js තුල apis array එකට add කරන්න
+{
+    name: "PornHub Downloader",
+    path: "/download/phdl",
+    method: "GET",
+    category: "download",
+    description: "Download PornHub videos using Python script.",
+    params: [
+        { name: "url", type: "string", required: true, description: "PornHub video URL", placeholder: "https://www.pornhub.com/view_video.php?viewkey=..." }
+    ],
+    handler: "phdl",
+    importPath: "./api/phdl",
+    validate: (req) => {
+        if (!req.query.url) {
+            return { status: false, message: "Please provide a URL parameter" };
+        }
+        return null;
     },
+    transformResponse: (data) => ({ status: true, creator: "WALUKA🇱🇰", result: data })
+},
     {
         name: "Free Fire Player Info",
         path: "/search/freefire",
@@ -308,7 +309,7 @@ const healthCheckEndpoints = [
     { name: 'Modrinth Plugin Download', path: '/download/modrithpl', method: 'GET', testParams: { url: 'https://modrinth.com/plugin/veinminer' } },
     { name: 'PornPics Search', path: '/search/pornpicsearch', method: 'GET', testParams: { q: 'latina' } },
     { name: 'PornPics Gallery Downloader', path: '/download/pornpicdl', method: 'GET', testParams: { url: 'https://www.pornpics.com/galleries/busty-asian-wife-spreads-her-hot-legs-wearing-thin-red-lacy-undies-58142926/' } },
-    { name: 'PornHub Video Downloader', path: '/download/phubdl', method: 'GET', testParams: { url: 'https://www.pornhub.com/view_video.php?viewkey=ph5eb756841757e' } }
+    { name: 'PornHub Video Downloader', path: '/download/phdl', method: 'GET', testParams: { url: 'https://www.pornhub.com/view_video.php?viewkey=ph5eb756841757e' } }
 ];
 
 // Endpoint name mapping for stats
@@ -325,7 +326,7 @@ const endpointNameMap = {
     'modrithpldownload': 'Modrinth Plugin Download',
     'pornpicsearch': 'PornPics Search',
     'pornpicdl': 'PornPics Gallery Downloader',
-    'phubdl': 'PornHub Video Downloader'
+    'phdl': 'PornHub Video Downloader'
 };
 
 // Valid endpoints for API call tracking
@@ -333,7 +334,7 @@ const validEndpoints = [
     '/youtubedl', '/youtubedl2', '/tiktokdl',
     '/instagramdl', '/textphoto', '/freefire',
     '/chatgpt', '/aiart', '/modrithpl',
-    '/pornpicsearch', '/pornpicdl', '/phubdl'
+    '/pornpicsearch', '/pornpicdl', '/phdl'
 ];
 
 module.exports = {
