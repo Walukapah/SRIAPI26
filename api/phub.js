@@ -133,7 +133,7 @@ function getVideoMetadata(html) {
         author: null,
         views: null,
         likes: null,
-        pstars: [],
+        pornstars: [],
         tags: []
     };
 
@@ -172,7 +172,7 @@ function getVideoMetadata(html) {
         const img = star.find("img");
         const image = img.attr("src") || img.attr("data-src") || null;
         if (name) {
-            info.pstars.push({
+            info.pornstars.push({
                 name: name,
                 url: href && href.startsWith("/") ? "https://www.pornhub.com" + href : href,
                 image: image
@@ -278,7 +278,7 @@ async function getVideoInfo(url) {
         author: metadata.author,
         views: metadata.views,
         likes: metadata.likes,
-        pstars: metadata.pstars,
+        pornstars: metadata.pornstars,
         tags: metadata.tags,
         m3u8: m3u8Data,
         download: downloadUrls,
