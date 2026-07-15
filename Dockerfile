@@ -4,13 +4,18 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Install curl for healthcheck and python (must be before COPY for layer caching)
-RUN apk add --no-cache curl python3 py3-pip &&     ln -sf python3 /usr/bin/python
+RUN apk add --no-cache curl python3 py3-pip && \
+    ln -sf python3 /usr/bin/python
 
 # Copy package files first (better layer caching)
 COPY package*.json ./
+COPY requirements.txt ./
 
-# Install dependencies
+# Install Node.js dependencies
 RUN npm install --omit=dev
+
+# Install Python dependencies
+RUN pip3 install --break-system-packages -r requirements.txt
 
 # Copy app files
 COPY . .
