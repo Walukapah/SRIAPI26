@@ -40,9 +40,9 @@ function fetchPage(url, useMobile = false) {
 }
 
 function extractJsonLd(html) {
-    const scripts = html.match(/<script[^>]*type="application\\/ld\\+json"[^>]*>([\\s\\S]*?)<\\/script>/gi) || [];
+    const scripts = html.match(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi) || [];
     for (const script of scripts) {
-        const content = script.replace(/<script[^>]*>/i, '').replace(/<\\/script>/i, '').trim();
+        const content = script.replace(/<script[^>]*>/i, '').replace(/<\/script>/i, '').trim();
         try {
             return JSON.parse(content);
         } catch (e) {}
@@ -52,8 +52,8 @@ function extractJsonLd(html) {
 
 function convertDuration(value) {
     if (!value) return null;
-    if (/^\\d+:\\d+$/.test(value)) return value;
-    const match = value.match(/PT(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+)S)?/);
+    if (/^\d+:\d+$/.test(value)) return value;
+    const match = value.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
     if (match) {
         const h = parseInt(match[1] || 0);
         const m = parseInt(match[2] || 0);
@@ -81,7 +81,7 @@ function extractMediaDefinitions(script) {
             }
         }
     }
-    const raw = script.substring(start, end).replace(/\\\\\\//g, "/");
+    const raw = script.substring(start, end).replace(/\\\//g, "/");
     try {
         return JSON.parse(raw);
     } catch (e) {
@@ -90,10 +90,10 @@ function extractMediaDefinitions(script) {
 }
 
 function findHls(html) {
-    const scripts = html.match(/<script[^>]*>([\\s\\S]*?)<\\/script>/gi) || [];
+    const scripts = html.match(/<script[^>]*>([\s\S]*?)<\/script>/gi) || [];
     const output = {};
     for (const scriptTag of scripts) {
-        const script = scriptTag.replace(/<script[^>]*>/i, '').replace(/<\\/script>/i, '');
+        const script = scriptTag.replace(/<script[^>]*>/i, '').replace(/<\/script>/i, '');
         if (!script.includes("mediaDefinitions")) continue;
         const media = extractMediaDefinitions(script);
         if (!media) continue;
@@ -133,7 +133,7 @@ function getVideoMetadata(html) {
         author: null,
         views: null,
         likes: null,
-        pornstars: [],
+        pstars: [],
         tags: []
     };
 
@@ -172,7 +172,7 @@ function getVideoMetadata(html) {
         const img = star.find("img");
         const image = img.attr("src") || img.attr("data-src") || null;
         if (name) {
-            info.pornstars.push({
+            info.pstars.push({
                 name: name,
                 url: href && href.startsWith("/") ? "https://www.pornhub.com" + href : href,
                 image: image
@@ -209,18 +209,18 @@ async function extractHlsWithRetry(url) {
         { mobile: true, desc: "Mobile" },
         { mobile: false, desc: "Desktop retry" }
     ];
-    
+
     while (count < 10) {
         count++;
         console.log(`Attempt ${count}...`);
-        
+
         const strategy = strategies[count % strategies.length];
-        
+
         const promises = [];
         for (let i = 0; i < CONCURRENT_REQUESTS; i++) {
             promises.push(singleRequest(url, strategy.mobile));
         }
-        
+
         try {
             const results = await Promise.all(promises);
             for (const result of results) {
@@ -231,10 +231,10 @@ async function extractHlsWithRetry(url) {
         } catch (e) {
             console.log(`Batch error: ${e.message}`);
         }
-        
+
         await new Promise(r => setTimeout(r, RETRY_DELAY + (count * 500)));
     }
-    
+
     return { request_count: count, hls: null, meta: null };
 }
 
@@ -251,7 +251,7 @@ function buildDownloadUrls(m3u8Data) {
 
 async function getVideoInfo(url) {
     console.log(`Fetching video info for: ${url}`);
-    
+
     let html;
     try {
         html = await fetchPage(url, false);
@@ -259,10 +259,10 @@ async function getVideoInfo(url) {
         console.log(`Desktop fetch failed, trying mobile...`);
         html = await fetchPage(url, true);
     }
-    
+
     const metadata = getVideoMetadata(html);
     console.log(`Title: ${metadata.title || "N/A"}`);
-    
+
     const hlsResult = await extractHlsWithRetry(url);
     const m3u8Data = hlsResult.hls || {};
     const downloadUrls = buildDownloadUrls(m3u8Data);
@@ -278,7 +278,7 @@ async function getVideoInfo(url) {
         author: metadata.author,
         views: metadata.views,
         likes: metadata.likes,
-        pornstars: metadata.pornstars,
+        pstars: metadata.pstars,
         tags: metadata.tags,
         m3u8: m3u8Data,
         download: downloadUrls,
@@ -286,7 +286,11 @@ async function getVideoInfo(url) {
     };
 }
 
-module.exports = async function phubdl(videoUrl) {
+// ============================================
+// FIXED: Multiple export formats for compatibility
+// ============================================
+
+async function phubdl(videoUrl) {
     try {
         const result = await getVideoInfo(videoUrl);
         if (Object.keys(result.m3u8).length === 0) {
@@ -299,4 +303,25 @@ module.exports = async function phubdl(videoUrl) {
     } catch (error) {
         return { success: false, error: error.message };
     }
-};
+}
+
+// Export 1: Default export (module.exports = ...)
+module.exports = phubdl;
+
+// Export 2: Named export (module.exports.phubdl = ...)
+module.exports.phubdl = phubdl;
+
+// Export 3: Direct property assignment (for handlerModules compatibility)
+module.exports.default = phubdl;
+module.exports.handler = phubdl;
+module.exports.run = phubdl;
+module.exports.execute = phubdl;
+module.exports.api = phubdl;
+module.exports.process = phubdl;
+
+// Export 4: ES6 style (if using import/export)
+if (typeof exports !== 'undefined') {
+    exports.default = phubdl;
+    exports.phubdl = phubdl;
+    exports.handler = phubdl;
+}
