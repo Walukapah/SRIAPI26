@@ -25,12 +25,11 @@ async function phsSearch(query) {
             }
 
             resolve({
-                success: true,
                 data: parsedData
             });
         } catch (error) {
             reject({
-                success: false,
+                status: false,
                 error: error.message,
                 stderr: error.stderr?.toString() || null
             });
