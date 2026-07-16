@@ -369,7 +369,7 @@ const endpointNameMap = {
     'pornpicdl': 'PornPics Gallery Downloader',
     'phdl': 'PornHub Video Downloader',
     'phs': 'PornHub Video Search',
-    'googlesearch': 'Google Search'
+    'googlesearch': 'Google Search',
 };
 
 // Valid endpoints for API call tracking
