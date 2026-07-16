@@ -363,6 +363,7 @@ const healthCheckEndpoints = [
     { name: 'PornPics Gallery Downloader', path: '/download/pornpicdl', method: 'GET', testParams: { url: 'https://www.pornpics.com/galleries/busty-asian-wife-spreads-her-hot-legs-wearing-thin-red-lacy-undies-58142926/' } },
     { name: 'PornHub Video Downloader', path: '/download/phdl', method: 'GET', testParams: { url: 'https://www.pornhub.com/view_video.php?viewkey=ph5eb756841757e' } },
     { name: 'PornHub Video Search', path: '/search/phs', method: 'GET', testParams: { q: 'latina' } },
+    { name: 'Google Search', path: '/search/google', method: 'GET', testParams: { q: 'nodejs tutorial' } },
 ];
 
 // Endpoint name mapping for stats
@@ -380,7 +381,8 @@ const endpointNameMap = {
     'pornpicsearch': 'PornPics Search',
     'pornpicdl': 'PornPics Gallery Downloader',
     'phdl': 'PornHub Video Downloader',
-    'phs': 'PornHub Video Search'
+    'phs': 'PornHub Video Search',
+    'googlesearch': 'Google Search'
 };
 
 // Valid endpoints for API call tracking
@@ -389,7 +391,7 @@ const validEndpoints = [
     '/instagramdl', '/textphoto', '/freefire',
     '/chatgpt', '/aiart', '/modrithpl',
     '/pornpicsearch', '/pornpicdl', '/phdl',
-    '/phs'
+    '/phs', '/googlesearch'
 ];
 
 module.exports = {
