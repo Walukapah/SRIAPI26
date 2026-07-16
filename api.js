@@ -236,6 +236,39 @@ const apis = [
     },
     transformResponse: (data) => ({ status: true, creator: "WALUKA🇱🇰", result: data })
 },
+    // api.js එකේ apis array එකට මේ object එක add කරන්න
+{
+    name: "Google Search",
+    path: "/search/google",
+    method: "GET",
+    category: "search",
+    description: "Search the web using DuckDuckGo HTML scraper and get results similar to Google Search.",
+    params: [
+        { name: "q", type: "string", required: true, description: "Search query string", placeholder: "python tutorial" }
+    ],
+    handler: "googlesearch",
+    importPath: "./api/googlesearch",
+    validate: (req) => {
+        if (!req.query.q) {
+            return { status: false, message: "Please provide a search query (use ?q= parameter)" };
+        }
+        return null;
+    },
+    transformResponse: (data) => {
+        if (!data.success) {
+            return { status: false, creator: "WALUKA🇱🇰", message: data.message };
+        }
+        return {
+            status: true,
+            creator: "WALUKA🇱🇰",
+            result: {
+                query: data.query,
+                total_results: data.total_results,
+                results: data.results
+            }
+        };
+    }
+},
     {
         name: "AI Chat",
         path: "/ai/aichat",
