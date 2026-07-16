@@ -218,6 +218,25 @@ const apis = [
         transformResponse: (data) => ({ status: true, creator: "WALUKA🇱🇰", result: data.result || data })
     },
     {
+    name: "PornHub Video Search",
+    path: "/search/phs",
+    method: "GET",
+    category: "search",
+    description: "Search using PornHub Video Search Python script.",
+    params: [
+        { name: "q", type: "string", required: true, description: "Search query", placeholder: "hot" }
+    ],
+    handler: "phssearch",
+    importPath: "./api/phs",
+    validate: (req) => {
+        if (!req.query.q) {
+            return { status: false, message: "Please provide a query parameter (q)" };
+        }
+        return null;
+    },
+    transformResponse: (data) => ({ status: true, creator: "WALUKA🇱🇰", result: data })
+},
+    {
         name: "AI Chat",
         path: "/ai/aichat",
         method: "GET",
@@ -309,7 +328,8 @@ const healthCheckEndpoints = [
     { name: 'Modrinth Plugin Download', path: '/download/modrithpl', method: 'GET', testParams: { url: 'https://modrinth.com/plugin/veinminer' } },
     { name: 'PornPics Search', path: '/search/pornpicsearch', method: 'GET', testParams: { q: 'latina' } },
     { name: 'PornPics Gallery Downloader', path: '/download/pornpicdl', method: 'GET', testParams: { url: 'https://www.pornpics.com/galleries/busty-asian-wife-spreads-her-hot-legs-wearing-thin-red-lacy-undies-58142926/' } },
-    { name: 'PornHub Video Downloader', path: '/download/phdl', method: 'GET', testParams: { url: 'https://www.pornhub.com/view_video.php?viewkey=ph5eb756841757e' } }
+    { name: 'PornHub Video Downloader', path: '/download/phdl', method: 'GET', testParams: { url: 'https://www.pornhub.com/view_video.php?viewkey=ph5eb756841757e' } },
+    { name: 'PornHub Video Search', path: '/search/phs', method: 'GET', testParams: { q: 'latina' } },
 ];
 
 // Endpoint name mapping for stats
@@ -327,6 +347,7 @@ const endpointNameMap = {
     'pornpicsearch': 'PornPics Search',
     'pornpicdl': 'PornPics Gallery Downloader',
     'phdl': 'PornHub Video Downloader'
+    'phs': 'PornHub Video Search'
 };
 
 // Valid endpoints for API call tracking
@@ -334,7 +355,8 @@ const validEndpoints = [
     '/youtubedl', '/youtubedl2', '/tiktokdl',
     '/instagramdl', '/textphoto', '/freefire',
     '/chatgpt', '/aiart', '/modrithpl',
-    '/pornpicsearch', '/pornpicdl', '/phdl'
+    '/pornpicsearch', '/pornpicdl', '/phdl',
+    '/phs'
 ];
 
 module.exports = {
