@@ -369,7 +369,7 @@ const endpointNameMap = {
     'pornpicdl': 'PornPics Gallery Downloader',
     'phdl': 'PornHub Video Downloader',
     'phs': 'PornHub Video Search',
-    'googlesearch': 'Google Search'
+    'google': 'Google Search'
 };
 
 // Valid endpoints for API call tracking
@@ -378,7 +378,7 @@ const validEndpoints = [
     '/instagramdl', '/textphoto', '/freefire',
     '/chatgpt', '/aiart', '/modrithpl',
     '/pornpicsearch', '/pornpicdl', '/phdl',
-    '/phs', '/googlesearch'
+    '/phs', '/google'
 ];
 
 module.exports = {
