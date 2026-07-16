@@ -346,7 +346,7 @@ const endpointNameMap = {
     'modrithpldownload': 'Modrinth Plugin Download',
     'pornpicsearch': 'PornPics Search',
     'pornpicdl': 'PornPics Gallery Downloader',
-    'phdl': 'PornHub Video Downloader'
+    'phdl': 'PornHub Video Downloader',
     'phs': 'PornHub Video Search'
 };
 
