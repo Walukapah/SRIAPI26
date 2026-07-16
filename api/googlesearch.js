@@ -6,7 +6,7 @@ async function googlesearch(query) {
     return new Promise((resolve, reject) => {
         if (!query) {
             return resolve({
-                success: false,
+                status: false,
                 error: "Please provide a search query"
             });
         }
@@ -31,7 +31,7 @@ async function googlesearch(query) {
             if (code !== 0) {
                 console.error(`[GOOGLE SEARCH] Python error: ${stderr}`);
                 return resolve({
-                    success: false,
+                    status: false,
                     error: `Python script failed: ${stderr || 'Unknown error'}`
                 });
             }
@@ -40,14 +40,13 @@ async function googlesearch(query) {
                 // Parse JSON output from Python
                 const result = JSON.parse(stdout.trim());
                 resolve({
-                    success: true,
                     result: result
                 });
             } catch (e) {
                 console.error(`[GOOGLE SEARCH] JSON parse error: ${e.message}`);
                 console.error(`[GOOGLE SEARCH] Raw output: ${stdout}`);
                 resolve({
-                    success: false,
+                    status: false,
                     error: "Failed to parse search results"
                 });
             }
