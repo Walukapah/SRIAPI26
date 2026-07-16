@@ -1,40 +1,67 @@
-// phs.js - PHS Search Handler
-// Python file එක run කරලා result එක return කරයි
-const { execSync } = require('child_process');
+// api/googlesearch.js - Google Search using Python script
+const { spawn } = require('child_process');
 const path = require('path');
 
-async function phsSearch(query) {
+async function googlesearch(query) {
     return new Promise((resolve, reject) => {
-        try {
-            const pythonFile = path.join(__dirname, 'googlesearch.py');
-
-            // Python file එක run කරනවා - query එක argument එකක් විදියට pass කරලා
-            const result = execSync(`python "${pythonFile}" "${query}"`, {
-                encoding: 'utf-8',
-                timeout: 30000, // 30 seconds timeout
-                maxBuffer: 1024 * 1024 * 10 // 10MB buffer
-            });
-
-            // Python output එක parse කරනවා
-            let parsedData;
-            try {
-                parsedData = JSON.parse(result.trim());
-            } catch (e) {
-                // JSON නැත්නම් raw text return කරනවා
-                parsedData = { raw: result.trim() };
-            }
-
-            resolve({
-                data: parsedData
-            });
-        } catch (error) {
-            reject({
-                status: false,
-                error: error.message,
-                stderr: error.stderr?.toString() || null
+        if (!query) {
+            return resolve({
+                success: false,
+                error: "Please provide a search query"
             });
         }
+
+        const pythonScript = path.join(__dirname, 'googlesearch.py');
+        
+        // Run Python script with the query
+        const pythonProcess = spawn('python', [pythonScript, query]);
+        
+        let stdout = '';
+        let stderr = '';
+
+        pythonProcess.stdout.on('data', (data) => {
+            stdout += data.toString();
+        });
+
+        pythonProcess.stderr.on('data', (data) => {
+            stderr += data.toString();
+        });
+
+        pythonProcess.on('close', (code) => {
+            if (code !== 0) {
+                console.error(`[GOOGLE SEARCH] Python error: ${stderr}`);
+                return resolve({
+                    success: false,
+                    error: `Python script failed: ${stderr || 'Unknown error'}`
+                });
+            }
+
+            try {
+                // Parse JSON output from Python
+                const result = JSON.parse(stdout.trim());
+                resolve({
+                    success: true,
+                    result: result
+                });
+            } catch (e) {
+                console.error(`[GOOGLE SEARCH] JSON parse error: ${e.message}`);
+                console.error(`[GOOGLE SEARCH] Raw output: ${stdout}`);
+                resolve({
+                    success: false,
+                    error: "Failed to parse search results"
+                });
+            }
+        });
+
+        // Timeout after 30 seconds
+        setTimeout(() => {
+            pythonProcess.kill();
+            resolve({
+                success: false,
+                error: "Search timeout - took too long"
+            });
+        }, 30000);
     });
 }
 
-module.exports = phsSearch;
+module.exports = googlesearch;
