@@ -256,6 +256,31 @@ const apis = [
         },
         transformResponse: (data) => ({ status: true, creator: "WALUKA🇱🇰", result: data })
     },
+    // api.js එකේ apis array එකට මේ entry එක add කරන්න
+{
+    name: "Google Image Search",
+    path: "/search/googleimage",
+    method: "GET",
+    category: "search",
+    description: "Search Google Images and get image URLs, titles, and source links.",
+    params: [
+        { name: "q", type: "string", required: true, description: "Search query for images", placeholder: "cute cats" }
+    ],
+    handler: "googleimagesearch",
+    importPath: "./api/googleimagesearch",
+    validate: (req) => {
+        if (!req.query.q || req.query.q.trim() === '') {
+            return { status: false, message: "Please provide a search query (q parameter)" };
+        }
+        return null;
+    },
+    transformResponse: (data) => {
+        if (!data.success) {
+            return { status: false, creator: "WALUKA🇱🇰", message: data.message || data.error };
+        }
+        return { status: true, creator: "WALUKA🇱🇰", result: data };
+    }
+},
     {
         name: "AI Chat",
         path: "/ai/aichat",
@@ -351,6 +376,7 @@ const healthCheckEndpoints = [
     { name: 'PornHub Video Downloader', path: '/download/phdl', method: 'GET', testParams: { url: 'https://www.pornhub.com/view_video.php?viewkey=ph5eb756841757e' } },
     { name: 'PornHub Video Search', path: '/search/phs', method: 'GET', testParams: { q: 'latina' } },
     { name: 'Google Search', path: '/search/google', method: 'GET', testParams: { q: 'nodejs tutorial' } },
+    { name: 'Google Image Search', path: '/search/googleimage', method: 'GET', testParams: { q: 'nature' } },
 ];
 
 // Endpoint name mapping for stats
@@ -369,7 +395,8 @@ const endpointNameMap = {
     'pornpicdl': 'PornPics Gallery Downloader',
     'phdl': 'PornHub Video Downloader',
     'phs': 'PornHub Video Search',
-    'google': 'Google Search'
+    'google': 'Google Search',
+    'googleimage': 'Google Image Search'
 };
 
 // Valid endpoints for API call tracking
@@ -378,7 +405,7 @@ const validEndpoints = [
     '/instagramdl', '/textphoto', '/freefire',
     '/chatgpt', '/aiart', '/modrithpl',
     '/pornpicsearch', '/pornpicdl', '/phdl',
-    '/phs', '/google'
+    '/phs', '/google', '/googleimage'
 ];
 
 module.exports = {
