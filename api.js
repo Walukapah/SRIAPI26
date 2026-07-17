@@ -100,20 +100,20 @@ const apis = [
         transformResponse: (data) => ({ status: true, creator: "WALUKA🇱🇰", result: data })
     },
     {
-        name: "Modrinth Plugin Download",
-        path: "/download/modrithpl",
+        name: "Modrinth Download",
+        path: "/download/modrithdl",
         method: "GET",
         category: "download",
-        description: "Get full plugin details and all download links from Modrinth. Supports URLs, project IDs, and slugs.",
+        description: "Get full details and all download links from Modrinth. Supports URLs, project IDs, and slugs.",
         params: [
-            { name: "url", type: "string", required: true, description: "Modrinth plugin URL, project ID, or slug", placeholder: "https://modrinth.com/plugin/veinminer" }
+            { name: "url", type: "string", required: true, description: "Modrinth URL, project ID, or slug", placeholder: "https://modrinth.com/plugin/veinminer" }
         ],
-        handler: "modrithpldownload",
-        importPath: "./api/modrithpldownload",
+        handler: "modrithdownload",
+        importPath: "./api/modrithdownload",
         validate: (req) => {
             const id = req.query.url || req.query.id || req.query.slug || req.query.project;
             if (!id) {
-                return { status: false, creator: "WALUKA🇱🇰", message: "Please provide a plugin identifier. Use ?url=, ?id=, ?slug=, or ?project=" };
+                return { status: false, creator: "WALUKA🇱🇰", message: "Please provide a url identifier. Use ?url=, ?id=, ?slug=, or ?project=" };
             }
             return null;
         },
@@ -179,16 +179,16 @@ const apis = [
         transformResponse: (data) => ({ status: true, creator: "WALUKA🇱🇰", result: data })
     },
     {
-        name: "Modrinth Plugin Search",
-        path: "/search/modrithpl",
+        name: "Modrinth Search",
+        path: "/search/modriths",
         method: "GET",
         category: "search",
         description: "Search for Minecraft plugins/mods on Modrinth.",
         params: [
             { name: "query", type: "string", required: true, description: "Search query", placeholder: "veinminer" }
         ],
-        handler: "modrithplsearch",
-        importPath: "./api/modrithplsearch",
+        handler: "modrithsearch",
+        importPath: "./api/modrithsearch",
         validate: (req) => {
             const q = req.query.query || req.query.q;
             if (!q) {
@@ -369,8 +369,8 @@ const healthCheckEndpoints = [
     { name: 'Free Fire Player Info', path: '/search/freefire', method: 'GET', testParams: { region: 'SG', uid: '2326343985' } },
     { name: 'AI Chat', path: '/ai/aichat', method: 'GET', testParams: { prompt: 'Hello' } },
     { name: 'AI Art Generator', path: '/ai/aiart', method: 'GET', testParams: { prompt: 'a beautiful sunset', format: 'json' } },
-    { name: 'Modrinth Plugin Search', path: '/search/modrithpl', method: 'GET', testParams: { query: 'veinminer' } },
-    { name: 'Modrinth Plugin Download', path: '/download/modrithpl', method: 'GET', testParams: { url: 'https://modrinth.com/plugin/veinminer' } },
+    { name: 'Modrinth Search', path: '/search/modriths', method: 'GET', testParams: { query: 'veinminer' } },
+    { name: 'Modrinth Download', path: '/download/modrithdl', method: 'GET', testParams: { url: 'https://modrinth.com/plugin/veinminer' } },
     { name: 'PornPics Search', path: '/search/pornpicsearch', method: 'GET', testParams: { q: 'latina' } },
     { name: 'PornPics Gallery Downloader', path: '/download/pornpicdl', method: 'GET', testParams: { url: 'https://www.pornpics.com/galleries/busty-asian-wife-spreads-her-hot-legs-wearing-thin-red-lacy-undies-58142926/' } },
     { name: 'PornHub Video Downloader', path: '/download/phdl', method: 'GET', testParams: { url: 'https://www.pornhub.com/view_video.php?viewkey=ph5eb756841757e' } },
@@ -389,8 +389,8 @@ const endpointNameMap = {
     'freefire': 'Free Fire Player Info',
     'chatgpt': 'ChatGPT AI Chat',
     'aiart': 'AI Art Generator',
-    'modrithpl': 'Modrinth Plugin Search',
-    'modrithpldownload': 'Modrinth Plugin Download',
+    'modriths': 'Modrinth Search',
+    'modrithdl': 'Modrinth Download',
     'pornpicsearch': 'PornPics Search',
     'pornpicdl': 'PornPics Gallery Downloader',
     'phdl': 'PornHub Video Downloader',
@@ -403,7 +403,7 @@ const endpointNameMap = {
 const validEndpoints = [
     '/youtubedl', '/youtubedl2', '/tiktokdl',
     '/instagramdl', '/textphoto', '/freefire',
-    '/chatgpt', '/aiart', '/modrithpl',
+    '/chatgpt', '/aiart', '/modriths', '/modrithdl',
     '/pornpicsearch', '/pornpicdl', '/phdl',
     '/phs', '/google', '/googleimage'
 ];
