@@ -985,10 +985,10 @@ apis.forEach(api => {
 
                 // Call handler with parameters
                 let handlerResult;
-                if (api.handler === 'modrithpldownload') {
+                if (api.handler === 'modrithdownload') {
                     const id = req.query.url || req.query.id || req.query.slug || req.query.project;
                     handlerResult = await handlerModules[api.handler](id);
-                } else if (api.handler === 'modrithplsearch') {
+                } else if (api.handler === 'modrithsearch') {
                     const q = req.query.query || req.query.q;
                     handlerResult = await handlerModules[api.handler](q, req.query.limit, req.query.offset, req.query.sort);
                 } else if (api.handler === 'chatgptai') {
