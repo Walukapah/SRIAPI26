@@ -398,6 +398,7 @@ const healthCheckEndpoints = [
     { name: 'PornHub Video Search', path: '/search/phs', method: 'GET', testParams: { q: 'latina' } },
     { name: 'Google Search', path: '/search/google', method: 'GET', testParams: { q: 'nodejs tutorial' } },
     { name: 'Google Image Search', path: '/search/googleimage', method: 'GET', testParams: { q: 'nature' } },
+    { name: 'Cinesubz Movie Downloader', path: '/download/cinesubzmovie', method: 'GET', testParams: { url: 'https://cinesubz.lk/movies/avatar-fire-and-ash-2025-sinhala-subtitles/' } },
 ];
 
 // Endpoint name mapping for stats
@@ -417,7 +418,8 @@ const endpointNameMap = {
     'phdl': 'PornHub Video Downloader',
     'phs': 'PornHub Video Search',
     'google': 'Google Search',
-    'googleimage': 'Google Image Search'
+    'googleimage': 'Google Image Search',
+    'cinesubzmovie': 'Cinesubz Movie Downloader'
 };
 
 // Valid endpoints for API call tracking
@@ -426,7 +428,8 @@ const validEndpoints = [
     '/instagramdl', '/textphoto', '/freefire',
     '/chatgpt', '/aiart', '/modriths', '/modrithdl',
     '/pornpicsearch', '/pornpicdl', '/phdl',
-    '/phs', '/google', '/googleimage'
+    '/phs', '/google', '/googleimage',
+    '/cinesubzmovie'
 ];
 
 module.exports = {
