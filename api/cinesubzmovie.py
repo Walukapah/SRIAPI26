@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
 """
-CineSubz.lk Complete Movie Info Extractor (JSON Response Mode)
+CineSubz.lk Complete Movie Info Extractor (JSON Response Mode) - DEBUG VERSION
 Extracts ALL movie details + video URLs + MB/GB sizes + cast pics + thumbnails + views + language
 Returns JSON response only (no file saving)
-Video URLs merged into downloads array with sizes from page download links
 
 Usage:
-    python app.py <movie_url>
-
-Example:
-    python app.py https://cinesubz.lk/movies/avatar-fire-and-ash-2025-sinhala-subtitles/
+    python cinesubzmovie.py <movie_url>
 """
 
 import sys
@@ -31,6 +27,7 @@ def fetch_html(url):
         with urllib.request.urlopen(req, timeout=30) as response:
             return response.read().decode('utf-8', errors='ignore')
     except Exception as e:
+        print(f"DEBUG: fetch_html error: {e}", file=sys.stderr)
         return None
 
 
@@ -158,7 +155,6 @@ def extract_description(html):
     return None
 
 
-
 def extract_cast(html):
     cast = []
     section = re.search(r'<div[^>]*class=["\']zt-cast-section["\'][^>]*>(.*?)</div>\s*</div>\s*</div>', html, re.DOTALL)
@@ -195,41 +191,51 @@ def extract_subtitle_by(html):
 
 
 def extract_post_id(html):
-    pattern = r'data-post=["\'](\d+)["\']'
-    matches = re.findall(pattern, html)
-    if matches:
-        return matches[0]
-    pattern2 = r'\?p=(\d+)'
-    matches2 = re.findall(pattern2, html)
-    if matches2:
-        return matches2[0]
+    # Try multiple patterns for post ID
+    patterns = [
+        r'data-post=["\'](\d+)["\']',
+        r'\?p=(\d+)',
+        r'post["\']?\s*[:=]\s*["\']?(\d+)',
+        r'data-id=["\'](\d+)["\']',
+        r'post_id["\']?\s*[:=]\s*["\']?(\d+)',
+    ]
+    for pattern in patterns:
+        matches = re.findall(pattern, html)
+        if matches:
+            return matches[0]
     return None
 
 
 def extract_data_type(html):
-    pattern = r'<li[^>]*data-type=["\']([^"\']+)["\'][^>]*data-post='
-    matches = re.findall(pattern, html)
+    patterns = [
+        r'<li[^>]*data-type=["\']([^"\']+)["\'][^>]*data-post=',
+        r'data-type=["\']([^"\']+)["\']',
+        r'type["\']?\s*[:=]\s*["\']?([^"\']+)["\']?',
+    ]
     valid_types = {'mv', 'ep', 'tv', 'episode', 'movie'}
-    for match in matches:
-        if match.lower() in valid_types:
-            return match
-    pattern2 = r'data-type=["\']([^"\']+)["\']'
-    matches2 = re.findall(pattern2, html)
-    for match in matches2:
-        if match.lower() in valid_types:
-            return match
+    for pattern in patterns:
+        matches = re.findall(pattern, html)
+        for match in matches:
+            if match.lower() in valid_types:
+                return match
     return None
 
 
 def extract_player_options(html):
-    pattern = r'data-nume=["\']([^"\']+)["\']'
-    matches = re.findall(pattern, html)
+    # Try multiple patterns for player options
+    patterns = [
+        r'data-nume=["\']([^"\']+)["\']',
+        r'nume["\']?\s*[:=]\s*["\']?([^"\']+)["\']?',
+        r'option["\']?\s*[:=]\s*["\']?([^"\']+)["\']?',
+    ]
     seen = set()
     unique = []
-    for m in matches:
-        if m not in seen:
-            seen.add(m)
-            unique.append(m)
+    for pattern in patterns:
+        matches = re.findall(pattern, html)
+        for m in matches:
+            if m not in seen:
+                seen.add(m)
+                unique.append(m)
     return unique
 
 
@@ -257,6 +263,7 @@ def call_player_api(base_url, page_url, post_id, data_type, nume):
         with urllib.request.urlopen(req, timeout=30) as response:
             return response.read().decode('utf-8', errors='ignore')
     except Exception as e:
+        print(f"DEBUG: Player API error for nume={nume}: {e}", file=sys.stderr)
         return None
 
 
@@ -281,60 +288,36 @@ def fetch_url_content(url):
         with urllib.request.urlopen(req, timeout=60) as response:
             return response.read().decode('utf-8', errors='ignore')
     except Exception as e:
+        print(f"DEBUG: fetch_url_content error: {e}", file=sys.stderr)
         return None
 
 
 def extract_all_qualities(html_content):
-    pattern = r'const\s+ALL_QUALITIES\s*=\s*(\[.*?\]);'
-    match = re.search(pattern, html_content, re.DOTALL)
-    if match:
-        json_str = match.group(1)
-        try:
-            return json.loads(json_str)
-        except json.JSONDecodeError:
-            json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
+    patterns = [
+        r'const\s+ALL_QUALITIES\s*=\s*(\[.*?\]);',
+        r'var\s+ALL_QUALITIES\s*=\s*(\[.*?\]);',
+        r'let\s+ALL_QUALITIES\s*=\s*(\[.*?\]);',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, html_content, re.DOTALL)
+        if match:
+            json_str = match.group(1)
             try:
                 return json.loads(json_str)
-            except:
-                return None
-    return None
-
-
-def extract_all_qualities_alt(html_content):
-    pattern = r'var\s+ALL_QUALITIES\s*=\s*(\[.*?\]);'
-    match = re.search(pattern, html_content, re.DOTALL)
-    if match:
-        json_str = match.group(1)
-        try:
-            return json.loads(json_str)
-        except:
-            json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
-            try:
-                return json.loads(json_str)
-            except:
-                return None
-
-    pattern = r'let\s+ALL_QUALITIES\s*=\s*(\[.*?\]);'
-    match = re.search(pattern, html_content, re.DOTALL)
-    if match:
-        json_str = match.group(1)
-        try:
-            return json.loads(json_str)
-        except:
-            json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
-            try:
-                return json.loads(json_str)
-            except:
-                return None
+            except json.JSONDecodeError:
+                json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
+                try:
+                    return json.loads(json_str)
+                except:
+                    continue
     return None
 
 
 def extract_video_urls(html_content):
     urls = []
-    qualities = extract_all_qualities(html_content)
-    if not qualities:
-        qualities = extract_all_qualities_alt(html_content)
 
+    # Method 1: ALL_QUALITIES array
+    qualities = extract_all_qualities(html_content)
     if qualities:
         for q in qualities:
             if isinstance(q, dict) and 'url' in q:
@@ -343,32 +326,61 @@ def extract_video_urls(html_content):
                     'url': q['url'],
                     'default': q.get('default', False)
                 })
+        if urls:
+            return urls
 
-    if not urls:
-        mp4_pattern = r'https?://[^\s"\'<>]+\.mp4[^\s"\'<>]*'
-        mp4_matches = re.findall(mp4_pattern, html_content)
-        seen = set()
-        for url in mp4_matches:
-            if url not in seen:
-                seen.add(url)
-                urls.append({
-                    'quality': 'Unknown',
-                    'url': url,
-                    'default': False
-                })
+    # Method 2: Direct .mp4 URLs
+    mp4_pattern = r'https?://[^\s"\'<>]+\.mp4[^\s"\'<>]*'
+    mp4_matches = re.findall(mp4_pattern, html_content)
+    seen = set()
+    for url in mp4_matches:
+        if url not in seen:
+            seen.add(url)
+            urls.append({
+                'quality': 'Unknown',
+                'url': url,
+                'default': False
+            })
+    if urls:
+        return urls
 
-    if not urls:
-        url_pattern = r'url:\s*[\'"](https?://[^\s"\'<>]+)[\'"]'
-        url_matches = re.findall(url_pattern, html_content)
-        seen = set()
-        for url in url_matches:
-            if url not in seen:
-                seen.add(url)
-                urls.append({
-                    'quality': 'Default',
-                    'url': url,
-                    'default': True
-                })
+    # Method 3: url: "..." pattern
+    url_pattern = r'url:\s*[\'"](https?://[^\s"\'<>]+)[\'"]'
+    url_matches = re.findall(url_pattern, html_content)
+    seen = set()
+    for url in url_matches:
+        if url not in seen:
+            seen.add(url)
+            urls.append({
+                'quality': 'Default',
+                'url': url,
+                'default': True
+            })
+
+    # Method 4: m3u8 URLs
+    m3u8_pattern = r'https?://[^\s"\'<>]+\.m3u8[^\s"\'<>]*'
+    m3u8_matches = re.findall(m3u8_pattern, html_content)
+    for url in m3u8_matches:
+        if url not in seen:
+            seen.add(url)
+            urls.append({
+                'quality': 'HLS Stream',
+                'url': url,
+                'default': False
+            })
+
+    # Method 5: src="..." with video URLs
+    src_pattern = r'src=["\'](https?://[^"\']+\.(?:mp4|m3u8|webm))["\']'
+    src_matches = re.findall(src_pattern, html_content)
+    for url in src_matches:
+        if url not in seen:
+            seen.add(url)
+            urls.append({
+                'quality': 'Direct',
+                'url': url,
+                'default': False
+            })
+
     return urls
 
 
@@ -493,6 +505,12 @@ def extract_movie_info(url):
     info['language'] = extract_language(html)
     info['thumbnails'] = extract_thumbnail_pics(html)
 
+    # DEBUG: Print extracted basic info
+    print(f"DEBUG: Title: {info['title']}", file=sys.stderr)
+    print(f"DEBUG: Post ID found: {extract_post_id(html)}", file=sys.stderr)
+    print(f"DEBUG: Data type found: {extract_data_type(html)}", file=sys.stderr)
+    print(f"DEBUG: Player options: {extract_player_options(html)}", file=sys.stderr)
+
     # Extract video URLs from player API
     post_id = extract_post_id(html)
     data_type = extract_data_type(html)
@@ -506,27 +524,40 @@ def extract_movie_info(url):
         player_options = extract_player_options(html)
         if not player_options:
             player_options = ["1"]
+            print(f"DEBUG: No player options found, trying default '1'", file=sys.stderr)
+
+        print(f"DEBUG: Trying player options: {player_options}", file=sys.stderr)
 
         for nume in player_options:
             response = call_player_api(base_url, url, post_id, data_type, nume)
+            print(f"DEBUG: Player API response for nume={nume}: {response[:200] if response else 'None'}...", file=sys.stderr)
+
             parsed_response = parse_api_response(response)
 
             if not parsed_response:
+                print(f"DEBUG: Failed to parse response for nume={nume}", file=sys.stderr)
                 continue
 
             embed_url = parsed_response.get('embed_url')
             video_type = parsed_response.get('type', 'unknown')
 
+            print(f"DEBUG: embed_url={embed_url}, type={video_type}", file=sys.stderr)
+
             if not embed_url:
+                print(f"DEBUG: No embed_url for nume={nume}", file=sys.stderr)
                 continue
 
             if video_type in ('iframe', 'trailer'):
+                print(f"DEBUG: Skipping iframe/trailer for nume={nume}", file=sys.stderr)
                 continue
 
             if video_type in ('mp4', 'ztshcode') and str(embed_url).startswith('http'):
+                print(f"DEBUG: Fetching embed URL: {embed_url}", file=sys.stderr)
                 player_html = fetch_url_content(str(embed_url))
                 if player_html:
+                    print(f"DEBUG: Player HTML length: {len(player_html)}", file=sys.stderr)
                     video_urls = extract_video_urls(player_html)
+                    print(f"DEBUG: Video URLs found: {len(video_urls)}", file=sys.stderr)
                     if video_urls:
                         for v in video_urls:
                             all_video_urls.append(v)
@@ -542,6 +573,17 @@ def extract_movie_info(url):
                         'url': str(embed_url),
                         'default': True
                     })
+            else:
+                # For other types, try to get video URLs directly
+                if str(embed_url).startswith('http'):
+                    player_html = fetch_url_content(str(embed_url))
+                    if player_html:
+                        video_urls = extract_video_urls(player_html)
+                        if video_urls:
+                            for v in video_urls:
+                                all_video_urls.append(v)
+
+    print(f"DEBUG: Total video URLs before dedup: {len(all_video_urls)}", file=sys.stderr)
 
     # Remove duplicate video URLs
     seen_urls = set()
@@ -551,8 +593,11 @@ def extract_movie_info(url):
             seen_urls.add(v['url'])
             unique_video_urls.append(v)
 
+    print(f"DEBUG: Total video URLs after dedup: {len(unique_video_urls)}", file=sys.stderr)
+
     # Get download links from page (for size matching)
     page_downloads = extract_download_links_with_sizes(html)
+    print(f"DEBUG: Page download links found: {len(page_downloads)}", file=sys.stderr)
 
     # Build a size map from page downloads by quality
     size_map = {}
@@ -606,7 +651,19 @@ def extract_movie_info(url):
             'default': v.get('default', False)
         })
 
+    # If no video URLs found but page has download links, use those
+    if not downloads and page_downloads:
+        for dl in page_downloads:
+            downloads.append({
+                'url': dl['url'],
+                'quality': dl['quality'],
+                'size': dl['size'],
+                'language': dl['language'],
+                'default': False
+            })
+
     info['downloads'] = downloads
+    print(f"DEBUG: Final downloads count: {len(downloads)}", file=sys.stderr)
     return info
 
 
@@ -614,7 +671,7 @@ def main():
     if len(sys.argv) < 2:
         print(json.dumps({
             "success": False,
-            "error": "Usage: python app.py <url>"
+            "error": "Usage: python cinesubzmovie.py <url>"
         }, indent=2, ensure_ascii=False))
         sys.exit(1)
 
@@ -646,6 +703,9 @@ def main():
         print(json.dumps(result, indent=2, ensure_ascii=False))
 
     except Exception as e:
+        import traceback
+        print(f"DEBUG: Exception: {e}", file=sys.stderr)
+        print(traceback.format_exc(), file=sys.stderr)
         print(json.dumps({
             "success": False,
             "error": str(e),
