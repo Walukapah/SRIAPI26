@@ -158,6 +158,27 @@ const apis = [
     },
     transformResponse: (data) => ({ status: true, creator: "WALUKA🇱🇰", result: data })
 },
+{
+    name: "Cinesubz Movie Downloader",
+    path: "/download/cinesubzmovie",
+    method: "GET",
+    category: "download",
+    description: "Download movies from Cinesubz.lk with Sinhala subtitles.",
+    params: [
+        { name: "url", type: "string", required: true, description: "Cinesubz movie URL", placeholder: "https://cinesubz.lk/movies/avatar-fire-and-ash-2025-sinhala-subtitles/" }
+    ],
+    handler: "cinesubzmovie",
+    importPath: "./api/cinesubzmovie",
+    validate: (req) => {
+        const url = req.query.url;
+        if (!url || !url.includes('cinesubz.lk')) {
+            return { status: false, message: "Please provide a valid Cinesubz URL" };
+        }
+        return null;
+    },
+    transformResponse: (data) => ({ status: true, creator: "WALUKA🇱🇰", result: data })
+},
+
     {
         name: "Free Fire Player Info",
         path: "/search/freefire",
