@@ -28,13 +28,13 @@ async function phdl(url) {
                     try {
                         const jsonData = JSON.parse(data);
                         resolve({
-                            success: true,
+                           // success: true,
                             ...jsonData
                         });
                     } catch (jsonError) {
                         // JSON නැත්නම් raw text return කරනවා
                         resolve({
-                            success: true,
+                           // success: true,
                             raw_output: data.trim()
                         });
                     }
