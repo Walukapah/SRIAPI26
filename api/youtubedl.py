@@ -738,8 +738,17 @@ def main():
     # Add channel info
     result["channel"] = channel_info
 
+    # Wrap in Koyeb API format
+    final_output = {
+        "status": True,
+        "creator": "WALUKA🇱🇰",
+        "result": {
+            "result": result
+        }
+    }
+
     # Pretty print JSON
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    print(json.dumps(final_output, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":
