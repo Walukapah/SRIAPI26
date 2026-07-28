@@ -1,71 +1,66 @@
-const axios = require('axios');
+// api/youtubedl.js - YouTube Downloader using Python script
+const { spawn } = require('child_process');
+const path = require('path');
 
-// Generate dynamic cookie
-const generateCookie = () => {
-  const randomStr = Math.random().toString(36).substring(2, 15);
-  return `PHPSESSID=${randomStr}`;
-};
+async function youtubedl(url) {
+    return new Promise((resolve, reject) => {
+        if (!url) {
+            return resolve({
+                status: false,
+                error: "Please provide a YouTube URL"
+            });
+        }
 
-const getVideoData = async (videoUrl) => {
-  const params = new URLSearchParams();
-  params.append('url', videoUrl);
+        const pythonScript = path.join(__dirname, 'youtubedl.py');
+        
+        // Run Python script with the URL
+        const pythonProcess = spawn('python', [pythonScript, url]);
+        
+        let stdout = '';
+        let stderr = '';
 
-  const headers = {
-    "Accept": "*/*",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-    "Origin": "https://ytsave.to",
-    "Referer": "https://ytsave.to/en2/",
-    "Sec-Ch-Ua": '"Not A(Brand";v="8", "Chromium";v="132"',
-    "Sec-Ch-Ua-Mobile": "?1",
-    "Sec-Ch-Ua-Platform": '"Android"',
-    "Sec-Fetch-Dest": "empty",
-    "Sec-Fetch-Mode": "cors",
-    "Sec-Fetch-Site": "same-origin",
-    "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36",
-    "X-Requested-With": "XMLHttpRequest",
-    "Cookie": generateCookie()
-  };
+        pythonProcess.stdout.on('data', (data) => {
+            stdout += data.toString();
+        });
 
-  try {
-    const response = await axios.post(
-      "https://ytsave.to/proxy.php",
-      params.toString(),
-      { 
-        headers,
-        timeout: 30000,
-        maxRedirects: 5
-      }
-    );
+        pythonProcess.stderr.on('data', (data) => {
+            stderr += data.toString();
+        });
 
-    return response.data;
-  } catch (error) {
-    throw new Error(`API request failed: ${error.message}`);
-  }
-};
+        pythonProcess.on('close', (code) => {
+            if (code !== 0) {
+                console.error(`[YOUTUBE DL] Python error: ${stderr}`);
+                return resolve({
+                    status: false,
+                    error: `Python script failed: ${stderr || 'Unknown error'}`
+                });
+            }
 
-module.exports = async (url) => {
-  try {
-    // Extract video ID
-    const videoIdMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|shorts)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
-    if (!videoIdMatch) throw new Error('Invalid YouTube URL format');
-    const videoId = videoIdMatch[1];
+            try {
+                // Parse JSON output from Python
+                const result = JSON.parse(stdout.trim());
+                resolve({
+                    result: result
+                });
+            } catch (e) {
+                console.error(`[YOUTUBE DL] JSON parse error: ${e.message}`);
+                console.error(`[YOUTUBE DL] Raw output: ${stdout}`);
+                resolve({
+                    status: false,
+                    error: "Failed to parse download results"
+                });
+            }
+        });
 
-    console.log(`Processing video ID: ${videoId}`);
+        // Timeout after 60 seconds (downloads may take longer)
+        setTimeout(() => {
+            pythonProcess.kill();
+            resolve({
+                success: false,
+                error: "Download timeout - took too long"
+            });
+        }, 60000);
+    });
+}
 
-    // Get video data from API
-    const videoData = await getVideoData(url);
-
-    if (!videoData || !videoData.api) {
-      throw new Error('Invalid API response');
-    }
-
-    // Return only the video data (without wrapping)
-    return videoData;
-
-  } catch (error) {
-    console.error('YouTubeDL Error:', error.message);
-    throw error; // Throw error to let index.js handle it
-  }
-};
+module.exports = youtubedl;
