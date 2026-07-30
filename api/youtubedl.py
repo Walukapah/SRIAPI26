@@ -73,12 +73,15 @@ def fetch_url(url, headers=None, timeout=15):
     if headers is None:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'identity',
             'Connection': 'keep-alive',
         }
     try:
         req = urllib.request.Request(url, headers=headers)
+        # Add consent bypass cookie to avoid YouTube interstitial pages
+        req.add_header('Cookie', 'CONSENT=YES+cb.20210328-17-p0.en+FX+{}'.format(100 + hash(url) % 900))
         socket.setdefaulttimeout(timeout)
         with urllib.request.urlopen(req, timeout=timeout) as response:
             return response.read().decode('utf-8')
@@ -216,9 +219,25 @@ def get_video_info(video_id, video_url):
         pass
 
     # Method 2: Fetch YouTube page and extract data
+    html = None
+    page_sources = [
+        f"https://www.youtube.com/watch?v={video_id}",
+        f"https://www.youtube.com/watch?v={video_id}&bpctr=9999999999&has_verified=1",
+        f"https://www.youtube-nocookie.com/embed/{video_id}",
+    ]
+
+    for page_url in page_sources:
+        try:
+            html = fetch_url(page_url, headers, timeout=20)
+            if html and 'ytInitialPlayerResponse' in html:
+                break
+            if html and 'videoDetails' in html:
+                break
+        except:
+            continue
+
     try:
-        page_url = f"https://www.youtube.com/watch?v={video_id}"
-        html = fetch_url(page_url, headers, timeout=20)
+        if html:
 
         if html:
             channel_id = extract_channel_id(html)
@@ -325,15 +344,40 @@ def get_video_info(video_id, video_url):
     except Exception:
         pass
 
-    # Method 3: Try no-cookie domain
-    if not info.get('title'):
+    # Method 3: Try no-cookie domain as fallback for title
+    if not info.get('title') or info.get('title') == 'YouTube':
         try:
             nocookie_url = f"https://www.youtube-nocookie.com/embed/{video_id}"
-            html = fetch_url(nocookie_url, headers, timeout=10)
-            if html:
-                title_match = re.search(r'<title>([^<]+)</title>', html)
+            nocookie_html = fetch_url(nocookie_url, headers, timeout=10)
+            if nocookie_html:
+                # Try to extract title from embed page
+                title_match = re.search(r'<title>([^<]+)</title>', nocookie_html)
                 if title_match:
-                    info['title'] = title_match.group(1).replace(' - YouTube', '')
+                    extracted = title_match.group(1).replace(' - YouTube', '').strip()
+                    if extracted and extracted != 'YouTube':
+                        info['title'] = extracted
+                # Try to extract from player response in embed
+                if 'ytInitialPlayerResponse' in nocookie_html:
+                    match = re.search(r'ytInitialPlayerResponse\s*=\s*({.+?});', nocookie_html, re.DOTALL)
+                    if match:
+                        try:
+                            embed_data = json.loads(match.group(1))
+                            embed_details = embed_data.get('videoDetails', {})
+                            if embed_details.get('title') and embed_details['title'] != 'YouTube':
+                                info['title'] = embed_details['title']
+                            if embed_details.get('author'):
+                                info['author'] = embed_details['author']
+                            if embed_details.get('channelId'):
+                                info['channel_id'] = embed_details['channelId']
+                                channel_id = embed_details['channelId']
+                            if embed_details.get('shortDescription'):
+                                info['description'] = embed_details['shortDescription']
+                            if embed_details.get('lengthSeconds'):
+                                info['duration_seconds'] = int(embed_details['lengthSeconds'])
+                            if embed_details.get('viewCount'):
+                                info['view_count'] = int(embed_details['viewCount'])
+                        except:
+                            pass
         except:
             pass
 
