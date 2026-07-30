@@ -237,109 +237,109 @@ def get_video_info(video_id, video_url):
             continue
 
     try:
-        if html:
+        if not html:
+            raise ValueError("No HTML content fetched")
 
-        if html:
-            channel_id = extract_channel_id(html)
+        channel_id = extract_channel_id(html)
 
-            match = re.search(r'ytInitialPlayerResponse\s*=\s*({.+?});(?:\s*</script>|\s*var)', html, re.DOTALL)
-            if not match:
-                match = re.search(r'ytInitialPlayerResponse\s*=\s*({.+?});', html, re.DOTALL)
+        match = re.search(r'ytInitialPlayerResponse\s*=\s*({.+?});(?:\s*</script>|\s*var)', html, re.DOTALL)
+        if not match:
+            match = re.search(r'ytInitialPlayerResponse\s*=\s*({.+?});', html, re.DOTALL)
 
-            if match:
-                try:
-                    player_data = json.loads(match.group(1))
-                    video_details = player_data.get('videoDetails', {})
+        if match:
+            try:
+                player_data = json.loads(match.group(1))
+                video_details = player_data.get('videoDetails', {})
 
-                    info['title'] = video_details.get('title', info.get('title'))
-                    info['author'] = video_details.get('author', info.get('author_name'))
-                    info['channel_id'] = video_details.get('channelId') or channel_id
-                    info['description'] = video_details.get('shortDescription')
-                    info['duration_seconds'] = int(video_details.get('lengthSeconds', 0)) if video_details.get('lengthSeconds') else None
-                    info['view_count'] = int(video_details.get('viewCount', 0)) if video_details.get('viewCount') else None
-                    info['like_count'] = int(video_details.get('likes', 0)) if video_details.get('likes') else None
-                    info['is_private'] = video_details.get('isPrivate', False)
-                    info['is_live'] = video_details.get('isLive', False)
-                    info['is_live_content'] = video_details.get('isLiveContent', False)
-                    info['keywords'] = video_details.get('keywords', [])
-                    info['category'] = video_details.get('category')
-                    info['publish_date'] = video_details.get('publishDate')
-                    info['upload_date'] = video_details.get('uploadDate')
+                info['title'] = video_details.get('title', info.get('title'))
+                info['author'] = video_details.get('author', info.get('author_name'))
+                info['channel_id'] = video_details.get('channelId') or channel_id
+                info['description'] = video_details.get('shortDescription')
+                info['duration_seconds'] = int(video_details.get('lengthSeconds', 0)) if video_details.get('lengthSeconds') else None
+                info['view_count'] = int(video_details.get('viewCount', 0)) if video_details.get('viewCount') else None
+                info['like_count'] = int(video_details.get('likes', 0)) if video_details.get('likes') else None
+                info['is_private'] = video_details.get('isPrivate', False)
+                info['is_live'] = video_details.get('isLive', False)
+                info['is_live_content'] = video_details.get('isLiveContent', False)
+                info['keywords'] = video_details.get('keywords', [])
+                info['category'] = video_details.get('category')
+                info['publish_date'] = video_details.get('publishDate')
+                info['upload_date'] = video_details.get('uploadDate')
 
-                    if video_details.get('channelId'):
-                        channel_id = video_details.get('channelId')
+                if video_details.get('channelId'):
+                    channel_id = video_details.get('channelId')
 
-                    thumbs = video_details.get('thumbnail', {}).get('thumbnails', [])
-                    if thumbs:
-                        info['thumbnails'] = thumbs
+                thumbs = video_details.get('thumbnail', {}).get('thumbnails', [])
+                if thumbs:
+                    info['thumbnails'] = thumbs
 
-                    microformat = player_data.get('microformat', {}).get('playerMicroformatRenderer', {})
-                    if microformat:
-                        info['publish_date'] = microformat.get('publishDate') or info.get('publish_date')
-                        info['upload_date'] = microformat.get('uploadDate') or info.get('upload_date')
-                        info['category'] = microformat.get('category') or info.get('category')
-                        info['is_family_safe'] = microformat.get('isFamilySafe')
-                        info['has_ypc_metadata'] = microformat.get('hasYpcMetadata', False)
-                        info['owner_channel_name'] = microformat.get('ownerChannelName')
-                        info['owner_profile_url'] = microformat.get('ownerProfileUrl')
-                        info['upload_date_iso'] = microformat.get('uploadDate')
-                        info['publish_date_iso'] = microformat.get('publishDate')
-                        info['duration_iso'] = microformat.get('lengthSeconds')
+                microformat = player_data.get('microformat', {}).get('playerMicroformatRenderer', {})
+                if microformat:
+                    info['publish_date'] = microformat.get('publishDate') or info.get('publish_date')
+                    info['upload_date'] = microformat.get('uploadDate') or info.get('upload_date')
+                    info['category'] = microformat.get('category') or info.get('category')
+                    info['is_family_safe'] = microformat.get('isFamilySafe')
+                    info['has_ypc_metadata'] = microformat.get('hasYpcMetadata', False)
+                    info['owner_channel_name'] = microformat.get('ownerChannelName')
+                    info['owner_profile_url'] = microformat.get('ownerProfileUrl')
+                    info['upload_date_iso'] = microformat.get('uploadDate')
+                    info['publish_date_iso'] = microformat.get('publishDate')
+                    info['duration_iso'] = microformat.get('lengthSeconds')
 
-                        owner_profile_url = microformat.get('ownerProfileUrl')
-                        if owner_profile_url:
-                            h = extract_handle_from_url(owner_profile_url)
-                            if h:
-                                channel_handle = h
+                    owner_profile_url = microformat.get('ownerProfileUrl')
+                    if owner_profile_url:
+                        h = extract_handle_from_url(owner_profile_url)
+                        if h:
+                            channel_handle = h
 
-                        owner = microformat.get('videoOwner', {})
-                        if owner:
-                            info['owner'] = owner
+                    owner = microformat.get('videoOwner', {})
+                    if owner:
+                        info['owner'] = owner
 
-                    captions = player_data.get('captions', {}).get('playerCaptionsTracklistRenderer', {})
-                    if captions:
-                        caption_tracks = captions.get('captionTracks', [])
-                        if caption_tracks:
-                            info['captions'] = [
-                                {
-                                    'name': track.get('name', {}).get('simpleText'),
-                                    'language_code': track.get('languageCode'),
-                                    'is_translatable': track.get('isTranslatable', False),
-                                }
-                                for track in caption_tracks
-                            ]
-                        info['audio_tracks'] = captions.get('audioTracks', [])
-                        info['default_audio_track_index'] = captions.get('defaultAudioTrackIndex')
+                captions = player_data.get('captions', {}).get('playerCaptionsTracklistRenderer', {})
+                if captions:
+                    caption_tracks = captions.get('captionTracks', [])
+                    if caption_tracks:
+                        info['captions'] = [
+                            {
+                                'name': track.get('name', {}).get('simpleText'),
+                                'language_code': track.get('languageCode'),
+                                'is_translatable': track.get('isTranslatable', False),
+                            }
+                            for track in caption_tracks
+                        ]
+                    info['audio_tracks'] = captions.get('audioTracks', [])
+                    info['default_audio_track_index'] = captions.get('defaultAudioTrackIndex')
 
-                except json.JSONDecodeError:
-                    pass
-            else:
-                info['player_response_not_found'] = True
+            except json.JSONDecodeError:
+                pass
+        else:
+            info['player_response_not_found'] = True
 
-            meta_title = re.search(r'<meta name="title" content="([^"]+)">', html)
-            if meta_title and not info.get('title'):
-                info['title'] = meta_title.group(1)
+        meta_title = re.search(r'<meta name="title" content="([^"]+)">', html)
+        if meta_title and not info.get('title'):
+            info['title'] = meta_title.group(1)
 
-            meta_desc = re.search(r'<meta name="description" content="([^"]+)">', html)
-            if meta_desc:
-                info['meta_description'] = meta_desc.group(1)
+        meta_desc = re.search(r'<meta name="description" content="([^"]+)">', html)
+        if meta_desc:
+            info['meta_description'] = meta_desc.group(1)
 
-            if not info.get('view_count'):
-                view_match = re.search(r'"viewCount":"(\d+)"', html)
-                if view_match:
-                    info['view_count'] = int(view_match.group(1))
+        if not info.get('view_count'):
+            view_match = re.search(r'"viewCount":"(\d+)"', html)
+            if view_match:
+                info['view_count'] = int(view_match.group(1))
 
-            like_match = re.search(r'"likeCount":"(\d+)"', html)
-            if like_match:
-                info['like_count'] = int(like_match.group(1))
+        like_match = re.search(r'"likeCount":"(\d+)"', html)
+        if like_match:
+            info['like_count'] = int(like_match.group(1))
 
-            sub_match = re.search(r'"subscriberCountText":\{"simpleText":"([^"]+)"\}', html)
-            if sub_match:
-                info['subscriber_count_text'] = sub_match.group(1)
+        sub_match = re.search(r'"subscriberCountText":\{"simpleText":"([^"]+)"\}', html)
+        if sub_match:
+            info['subscriber_count_text'] = sub_match.group(1)
 
-            comment_match = re.search(r'"commentCount":\{"simpleText":"([^"]+)"\}', html)
-            if comment_match:
-                info['comment_count_text'] = comment_match.group(1)
+        comment_match = re.search(r'"commentCount":\{"simpleText":"([^"]+)"\}', html)
+        if comment_match:
+            info['comment_count_text'] = comment_match.group(1)
 
     except Exception:
         pass
