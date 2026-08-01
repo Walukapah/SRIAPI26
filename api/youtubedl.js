@@ -1,66 +1,65 @@
-// api/youtubedl.js - YouTube Downloader using Python script
-const { spawn } = require('child_process');
-const path = require('path');
+// api/youtubedl.js - YouTube Downloader API
+// https://sriyoutube.onrender.com/youtube?url=URL
 
+const axios = require('axios');
+
+/**
+ * Fetch YouTube video info from sriyoutube API
+ * @param {string} url - YouTube video URL
+ * @returns {Promise<Object>} - Full API response with video_details, formats, channel
+ */
 async function youtubedl(url) {
-    return new Promise((resolve, reject) => {
-        if (!url) {
-            return resolve({
+    try {
+        const apiUrl = `https://sriyoutube.onrender.com/youtube?url=${encodeURIComponent(url)}`;
+        
+        const response = await axios.get(apiUrl, {
+            timeout: 60000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.0'
+            }
+        });
+
+        const data = response.data;
+
+        // Validate response structure
+        if (!data || !data.video_details || !data.formats) {
+            return {
                 status: false,
-                error: "Please provide a YouTube URL"
-            });
+                message: 'Invalid response from upstream API'
+            };
         }
 
-        const pythonScript = path.join(__dirname, 'youtubedl.py');
+        // Return full response as-is
+        return {
+            status: true,
+            video_details: data.video_details,
+            formats: data.formats,
+            channel: data.channel
+        };
+
+    } catch (error) {
+        console.error('[YouTubeDL] Error:', error.message);
         
-        // Run Python script with the URL
-        const pythonProcess = spawn('python', [pythonScript, url]);
+        if (error.response) {
+            return {
+                status: false,
+                message: error.response.data?.message || error.response.data?.error || `Upstream API error: ${error.response.status}`,
+                statusCode: error.response.status
+            };
+        }
         
-        let stdout = '';
-        let stderr = '';
+        if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+            return {
+                status: false,
+                message: 'Request timed out. The upstream API is taking too long to respond.'
+            };
+        }
 
-        pythonProcess.stdout.on('data', (data) => {
-            stdout += data.toString();
-        });
-
-        pythonProcess.stderr.on('data', (data) => {
-            stderr += data.toString();
-        });
-
-        pythonProcess.on('close', (code) => {
-            if (code !== 0) {
-                console.error(`[YOUTUBE DL] Python error: ${stderr}`);
-                return resolve({
-                    status: false,
-                    error: `Python script failed: ${stderr || 'Unknown error'}`
-                });
-            }
-
-            try {
-                // Parse JSON output from Python
-                const result = JSON.parse(stdout.trim());
-                resolve({
-                    result: result
-                });
-            } catch (e) {
-                console.error(`[YOUTUBE DL] JSON parse error: ${e.message}`);
-                console.error(`[YOUTUBE DL] Raw output: ${stdout}`);
-                resolve({
-                    status: false,
-                    error: "Failed to parse download results"
-                });
-            }
-        });
-
-        // Timeout after 60 seconds (downloads may take longer)
-        setTimeout(() => {
-            pythonProcess.kill();
-            resolve({
-                success: false,
-                error: "Download timeout - took too long"
-            });
-        }, 60000);
-    });
+        return {
+            status: false,
+            message: error.message || 'Failed to fetch YouTube video info'
+        };
+    }
 }
 
 module.exports = youtubedl;
